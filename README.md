@@ -288,6 +288,15 @@ This is appropriate because historical data is accumulated and processed in rela
 
 The future M4 system can additionally demonstrate new data arriving and triggering a batch update/retraining workflow. Full continuous streaming is not required for the initial training pipeline because the forecasting task does not require online learning at every individual measurement.
 
+The aim will be to add 3 scripts to automate the raw data download process for each of the 3 sources - EPA, UKAir, EEA, however the processes are different for each source. Some complications are the need to tick boxes agrreing to conditions and passing a ReCaptcha test. For now we will simply recommend downloading the raw data from each of the 3 sources. 
+
+The 3 urls to download the raw data are below: 
+- EPA ( https://eparesearch.epa.ie/safer/iso19115/displayISO19115.jsp?isoID=5999 )
+- UKAir ( https://uk-air.defra.gov.uk/data/ )
+- EEA ( https://www.eea.europa.eu/en/datahub/datahubitem-view/778ef9f5-6293-4846-badd-56a29c70880d )
+
+Follow the instructions of each to download the respective raw data.
+
 ---
 
 # 6. Data Split / Validation Strategy — 2.0 points
