@@ -350,6 +350,8 @@ Comparison with Model v1
 
 This follows the lecture principle that a project should not immediately consume every available observation and then claim to simulate future data.
 
+The approximate split will be 75% Training, 12.5% Dev, 12.5% Test.
+
 ---
 
 ## Geographic holdout
