@@ -780,11 +780,11 @@ The model also uses previous 3-hour PM2.5 averages as input features.
 For example, for the 09:00–11:59 input block:
 
 ```text
-Previous blocks                         Input        Target
+Previous blocks                              Input        Target
 
 00:00–02:59   03:00–05:59   06:00–08:59   09:00–11:59   14:00–16:59
      ↓             ↓             ↓              ↓              ↓
-   lag_3         lag_2         lag_1        input block      target
+   lag_3         lag_2         lag_1      input block     target
 ```
 
 The lag features therefore describe recent historical PM2.5 concentrations available before the target period.
@@ -805,65 +805,6 @@ The initial features will include:
 Only observations available before the target period are used.
 
 The rolling-window length will be treated as a configuration parameter and selected using the training/development data. The final 2025 test data will not be used to choose the window length.
-
-
----
-
-## Target construction
-
-The target is:
-
-> **The 3-hour mean PM2.5 concentration 6 hours ahead.**
-
-For example:
-
-```text
-08:00–10:59  →  14:00–16:59
-    INPUT          TARGET
-```
-
-A target will only be created when the required future measurements satisfy the predefined completeness rule.
-
-Defined forecast timestamp:
-
-```text
-Input block ending at t
-        ↓
-6-hour forecast horizon
-        ↓
-3-hour target block beginning at t+6h
-```
-
-This is intended to limit ambiguity
-
----
-
-## Lag features
-
-Lag features are generated exclusively from completed historical 3-hour blocks.
-
-For example:
-
-```text
-t-9h       t-6h       t-3h        t
-  │          │          │          │
-lag_3      lag_2      lag_1      latest
-
-                             ↓
-                        prediction
-                             ↓
-                            t+6h
-```
-
-No future target observations can enter these features.
-
----
-
-## Rolling features
-
-Rolling means and standard deviations will use historical observations only.
-
-The window length will be treated as a configuration parameter and will be selected using the development/training process rather than by inspecting the final test performance.
 
 ---
 
