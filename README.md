@@ -288,7 +288,36 @@ This is appropriate because historical data is accumulated and processed in rela
 
 The future M4 system can additionally demonstrate new data arriving and triggering a batch update/retraining workflow. Full continuous streaming is not required for the initial training pipeline because the forecasting task does not require online learning at every individual measurement.
 
-The aim will be to add 3 scripts to automate the raw data download process for each of the 3 sources - EPA, UKAir, EEA, however the processes are different for each source. Some complications are the need to tick boxes agrreing to conditions and passing a ReCaptcha test. For now we will simply recommend downloading the raw data from each of the 3 sources. 
+The aim will be to add 3 scripts to automate the raw data download process for each of the 3 sources - UKAir, EEA, and EPA, however the processes are different for each source. For now we will simply recommend downloading the raw data from each of the 3 sources manually. 
+
+Here are the guides to downloading the raw data from each source:
+
+- UKAir (format CSV):
+
+1. Go to interactive map here: https://uk-air.defra.gov.uk/interactive-map
+2. Zoom in and click on relevant stations (London Westminster, London Bloomsbury, Belfast Centre, Belfast Stockman, Derry)
+3. Select CSV data files for this site
+4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2026 and 2018.
+
+- EEA Europe (format Parquet):
+
+1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
+2. Set filters. Country to DK, FR, GR, IE, IT. Cities to Kobenhavn, Paris (Greater City), Athina, Dublin, Cork, Galway, Limerick, Waterford, Milano (Greater City). Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
+3. Fill in email.
+4. Set Temporal coverage (start date and end date). 1 January 2018 to date of your choosing (31/12/2025 recommended. Keep 2026 for new data).
+5. Select Download format Parquet
+6. Select Download under Download Actions
+7. Unzip downloaded files
+
+Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1.
+
+EPA Ireland station data:
+
+1. Go to this url: https://airquality.ie/readings
+2. Select each station and repeat  - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Eyre Square Galway (only available from 2023, Briarhill Co. Galway is an alternative)
+3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
+4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data)
+
 
 The 3 urls to download the raw data are below: 
 - EPA ( https://eparesearch.epa.ie/safer/iso19115/displayISO19115.jsp?isoID=5999 )
