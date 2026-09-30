@@ -783,7 +783,7 @@ For example, for the 09:00–11:59 input block:
 Previous blocks                              Input        Target
 
 00:00–02:59   03:00–05:59   06:00–08:59   09:00–11:59   14:00–16:59
-     ↓             ↓             ↓              ↓              ↓
+     ↓             ↓             ↓             ↓            ↓
    lag_3         lag_2         lag_1      input block     target
 ```
 
