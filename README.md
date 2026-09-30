@@ -19,7 +19,7 @@ The second question is a hypothesis to be tested rather than an assumption that 
 
 The initial modelling progression is:
 
-**Persistence baseline → Linear Regression → XGBoost → PyTorch GRU/LSTM**
+**Persistence baseline → Linear Regression → XGBoost → PyTorch GRU/LSTM (Optional)**
 
 This allows simple, interpretable, nonlinear tabular, and explicit sequence-based approaches to be compared.
 
@@ -31,10 +31,10 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 |---|---:|---|
 | **1. Raw data storage** | **1.0** | Raw source data will be stored unchanged in **Google Cloud Storage (GCS)** under source-specific `raw/` paths. GCS is appropriate because the raw datasets are historical files that need durable, scalable object storage and repeated batch access rather than transactional updates. |
 | **2. Processed data storage & file formats** | **1.0** | Processed canonical measurements and model features will be stored in **Parquet** in GCS. Parquet is appropriate for columnar analytical access to structured time-series data. Raw files remain in their original source formats. |
-| **3. Database / object storage decision** | **0.5** | GCS will be the authoritative object/data-lake layer. **BigQuery** will provide an analytical/query layer for SQL exploration and data-quality analysis. A transactional SQL database is not required because the project has no transactional workload. |
+| **3. Database / object storage decision** | **0.5** | GCS will be the authoritative object/data-lake layer. **BigQuery** will provide an analytical/query layer for SQL exploration and data-quality analysis. BigQuery may be abandoned for simplicity and to reduce setup time, as pandas should be sufficient for ~345k rows on Parquet files. A transactional SQL database is not required because the project has no transactional workload. |
 | **4. Data versioning** | **0.5** | Source files will be identified by source, period, filename, download timestamp, checksum and pipeline version. Dataset versions will be linked to the raw-data version, preprocessing configuration and code version to provide data lineage. |
-| **5. Data access** | **1.0** | Python ingestion scripts will access official EEA, EPA Ireland and UK-AIR sources, download raw files and upload them to GCS. Training/preprocessing code will read versioned Parquet data from GCS, with BigQuery used for analytical queries. Google Cloud authentication will use service-account/application-default credentials rather than embedded credentials. |
-| **6. Data split / validation strategy** | **2.0** | A chronological train/dev/test strategy will be used: **2018–2023 training, 2024 development, 2025 final test**. 2026 is reserved for a future-data/model-update demonstration. Derry, London and Paris are geographical holdouts and are excluded from model development. Time-aware CV may be used within 2018–2023. Future information, test data and target-period observations will not influence training or feature construction. |
+| **5. Data access** | **1.0** | Python ingestion scripts will access official EEA, EPA Ireland and UK-AIR sources, download raw files and upload them to GCS. Training/preprocessing code will read versioned Parquet data from GCS, with either BigQuery or pandas used for analytical queries. Google Cloud authentication will use service-account/application-default credentials rather than embedded credentials. |
+| **6. Data split / validation strategy** | **2.0** | A chronological train/dev/test strategy will be used: **2018–2023 training (2022-2023 for Irish stations), 2024 development, 2025 final test**. 2026 is reserved for a future-data/model-update demonstration. Derry, London and Paris are geographical holdouts and are excluded from model development. Time-aware CV may be used within 2018–2023. Future information, test data and target-period observations will not influence training or feature construction. |
 | **7. Feature description** | **1.0** | Features include historical PM2.5 lags and rolling statistics, temporal variables, station type and geographical information, with an optional nearby-station PM2.5 feature. Each feature is constructed only from information available before the forecast target. |
 | **8. Data types and formats** | **0.5** | The dataset contains numerical continuous data (PM2.5, coordinates), categorical data (station type, city, country), integer temporal variables, timestamps, station identifiers and quality flags. Raw sources include CSV and Parquet; processed data will use Parquet; manifests use JSONL. |
 | **9. Reproducibility of data collection** | **1.0** | Collection is implemented in version-controlled Python ingestion scripts. Source, URL/API parameters, country/city/station selection, pollutant, date range, filename, timestamp, checksum and pipeline version are recorded in a manifest. |
@@ -64,9 +64,9 @@ gs://<project-bucket>/
 │   |   ├── milan/
 │   |   │   ├── milanPascal/
 │   |   │   └── milanSenato/
-│   |   └── paris
-│   |       ├── parisGennevilliers/
-│   |       └── parisSaintDenis/
+│   |   └── *paris*
+│   |       ├── *parisGennevilliers/*
+│   |       └── *parisSaintDenis/*
 |   |
 │   ├── epa/
 │   │   ├── cork/
@@ -81,16 +81,18 @@ gs://<project-bucket>/
 │       ├── beflast/
 │       │   ├── belfastCentre/
 │       │   └── belfastStockman/
-│       ├── derry/
-│       └── london/
-│           ├── londonBloomsbury/
-│           └── londonWestminster/
+│       ├── *derry/*
+│       └── *london/*
+│           ├── *londonBloomsbury/*
+│           └── *londonWestminster/*
 │
 │
 ├── processed/
 ├── models/
 └── manifests/
 ```
+
+Note: stations witheheld from the Training data are in italics
 
 The raw files will be preserved **unchanged**. Processing will create separate derived datasets rather than overwriting the source data.
 
@@ -172,7 +174,9 @@ This acts as the project's object-storage/data-lake layer.
 
 ### BigQuery — analytical layer
 
-BigQuery will be used where SQL-based exploration and analysis are useful.
+BigQuery is considered optional. The main reason for including it would be to demonstrate understanding. However, the ~345,000 rows in the Parquet files could be analysed more simply with pandas in seconds. The trade-off for implementing BigQuery would be increased setup time, including dataset creation, load jobs, and IAM permissions.
+
+BigQuery may be used where SQL-based exploration and analysis are useful.
 
 A possible dataset is:
 
@@ -192,6 +196,12 @@ BigQuery is useful for:
 - exploratory analysis.
 
 The project will **not** treat BigQuery as a replacement for the raw data lake.
+
+BigQuery is not required at this dataset scale, local Parquet queries are sufficient. A final decision on whether or not to implement BigQuery will be made later in the project process.
+
+### Why not sharding?
+
+Sharding isn't necessary given the dataset comfortably fits in memory.
 
 ### Why not Cloud SQL/PostgreSQL?
 
@@ -339,6 +349,8 @@ Note: Hourly data is converted to UTC+1 time. This must be considered when looki
 3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
 4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data)
 
+Note: The reduced Training data timescale of 2022-2023 is a known limitation. Irish stations training on only 2 years (2022–2023) is a thin window for time-aware Cross-Validaton — barely one full seasonal cycle to fold across. This was a choice made due to a lack of earlier hourly PM2.5 data for Irish stations. The hope is that this won't hurt the model's ability to predict too severely.
+
 ---
 
 # 6. Data Split / Validation Strategy — 2.0 points
@@ -447,7 +459,7 @@ The 2024 development set and 2025 final test set remain outside this process.
 
 The pipeline for learned preprocessing explicitly follows:
 
-**Split → fit preprocessing on training data → transform other datasets**
+**Split → fit learned preprocessing on training data → transform other datasets**
 
 rather than:
 
@@ -572,15 +584,17 @@ The current collection scope is:
 
 ### EPA Ireland
 
-Validated Irish PM2.5 data for:
+Unvalidated/Up to date Irish PM2.5 data for:
 - Kilmainham, Dublin
 - Rathmines, Dublin
 - University College Cork
-- Eyre Square, Galway (only has PM2.5 data from December 2023 onwards. Briarhill, Co. Galway is a viable alternative located slightly outside the city with data avaialable from December 2022 onwards)
+- Briarhill, Co. Galway (located slightly outside Galway city with data avaialable from December 2022 onwards)
 - People's Park, Limerick
 - Paddy Browne's Road, Waterford
 
 **2022–2025**
+
+Validated data would have been preferred, however there was only validated daily data for a select few stations in Dublin and Cork. Unvalidated data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland, and their estimates are still likely accurate.
 
 ### UK-AIR
 
@@ -818,6 +832,8 @@ Uses the engineered tabular feature representation and allows nonlinear feature 
 
 ### PyTorch GRU/LSTM
 
+This is an optional addition if time allows after XGBoost is working and evaluated.
+
 Uses historical sequences of observations, with the exact sequence length selected during M2/M3.
 
 The model-specific representation is therefore produced **after** the common canonical data pipeline rather than requiring separate, manually maintained datasets.
@@ -905,7 +921,7 @@ The project treats data collection, quality, storage, transformation and lineage
 
 ### 2. Storage follows workload
 
-GCS is used for durable object storage and batch access, Parquet for efficient analytical data access, and BigQuery for SQL-based analysis.
+GCS is used for durable object storage and batch access, Parquet for efficient analytical data access, and BigQuery for SQL-based analysis (if implemented, otherwise pandas may be used for analysis).
 
 ### 3. Raw data is preserved
 
@@ -946,7 +962,7 @@ so that the origin of a deployed model can be reconstructed.
 
 ### 9. More complex models are not assumed to be better
 
-Persistence, Linear Regression, XGBoost and PyTorch sequence modelling will be compared empirically.
+Persistence, Linear Regression, XGBoost and PyTorch (optional) sequence modelling will be compared empirically.
 
 ### 10. Generalisation matters
 
