@@ -36,7 +36,7 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 | **5. Data access** | **1.0** | Python ingestion scripts will access official EEA, EPA Ireland and UK-AIR sources, download raw files and upload them to GCS. Training/preprocessing code will read versioned Parquet data from GCS, with BigQuery used for analytical queries. Google Cloud authentication will use service-account/application-default credentials rather than embedded credentials. |
 | **6. Data split / validation strategy** | **2.0** | A chronological train/dev/test strategy will be used: **2018–2023 training, 2024 development, 2025 final test**. 2026 is reserved for a future-data/model-update demonstration. Derry, London and Paris are geographical holdouts and are excluded from model development. Time-aware CV may be used within 2018–2023. Future information, test data and target-period observations will not influence training or feature construction. |
 | **7. Feature description** | **1.0** | Features include historical PM2.5 lags and rolling statistics, temporal variables, station type and geographical information, with an optional nearby-station PM2.5 feature. Each feature is constructed only from information available before the forecast target. |
-| **8. Data types and formats** | **0.5** | The dataset contains numerical continuous data (PM2.5, coordinates), categorical data (station type, city, country), integer temporal variables, timestamps, station identifiers and quality flags. Raw sources include Excel, CSV and Parquet; processed data will use Parquet; manifests use JSONL. |
+| **8. Data types and formats** | **0.5** | The dataset contains numerical continuous data (PM2.5, coordinates), categorical data (station type, city, country), integer temporal variables, timestamps, station identifiers and quality flags. Raw sources include CSV and Parquet; processed data will use Parquet; manifests use JSONL. |
 | **9. Reproducibility of data collection** | **1.0** | Collection is implemented in version-controlled Python ingestion scripts. Source, URL/API parameters, country/city/station selection, pollutant, date range, filename, timestamp, checksum and pipeline version are recorded in a manifest. |
 | **10. Reproducibility of preprocessing** | **1.5** | Raw data will be parsed, standardised, mapped to canonical stations, checked for duplicates and quality issues, aggregated into 3-hour measurements, converted into six-hour-ahead targets, and transformed into historical lag/rolling/temporal features. The exact configuration, completeness rules and dataset version will be recorded so the processed dataset can be regenerated from the raw data. |
 
@@ -101,7 +101,7 @@ GCS is appropriate because the raw data is primarily accessed through **batch pr
 The raw data sources are:
 
 - **European Environment Agency (EEA)** Air Quality Download Service
-- **Environmental Protection Agency Ireland (EPA)** validated air-quality archive
+- **Environmental Protection Agency Ireland (EPA)** current/unvalidated air-quality archive
 - **UK-AIR** automatic monitoring data
 
 ---
@@ -278,7 +278,7 @@ The EEA Air Quality Download Service will provide European monitoring time-serie
 
 ### EPA Ireland
 
-EPA validated monitoring archives will provide Irish monitoring measurements.
+EPA unvalidated monitoring archives will provide Irish monitoring measurements.
 
 ### UK-AIR
 
@@ -327,12 +327,12 @@ Here are the guides to downloading the raw data from each source:
 5. Select Download format Parquet and select Download under Download Actions
 6. Unzip downloaded files
 
-Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection.
+Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection.
 
-- EPA Ireland station data:
+- EPA Ireland (format CSV, downloaded from airquality.ie):
 
 1. Go to this url: https://airquality.ie/readings
-2. Select each station and repeat  - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Eyre Square Galway (only available from 2023, Briarhill Co. Galway is an alternative)
+2. Select each station and repeat  - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Briarhill Co. Galway (close to Galway city, data only available from December 2022).
 3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
 4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data)
 
@@ -398,7 +398,9 @@ Comparison with Model v1
 
 This follows the lecture principle that a project should not immediately consume every available observation and then claim to simulate future data.
 
-The approximate split will be 75% Training for years 2018-2023 for non-Irish European stations and 2022-2023 for Irish stations, 12.5% Development/Validation for year 2024, and 12.5% Test for year 2025.
+The approximate split will be:
+- Non-Irish stations: 75% Training for years 2018-2023, 12.5% Development/Validation for year 2024, and 12.5% Test for year 2025. 
+- Irish stations: 50% Training for years 2022-2023, 25% Development/Validation for year 2024, and 25% Test for year 2025.
 
 ---
 
@@ -440,7 +442,7 @@ The 2024 development set and 2025 final test set remain outside this process.
 
 ## Leakage prevention
 
-The pipeline explicitly follows:
+The pipeline for learned preprocessing explicitly follows:
 
 **Split → fit preprocessing on training data → transform other datasets**
 
@@ -462,6 +464,17 @@ For time-series features:
 - nearby-station features use only historical observations;
 - target observations cannot enter feature calculations;
 - future measurements cannot be used to construct past features.
+
+**Deterministic vs Learned preprocessing:**
+
+Deterministic preprocessing, such as timestamp parsing, unit standardisation,
+station-ID mapping, duplicate detection, and fixed 3-hour aggregation rules,
+can be applied before the split because it does not learn parameters from the
+full dataset.
+
+Learned preprocessing, such as feature scaling, imputation parameters,
+normalisation, or dimensionality reduction, must be fitted using the training
+data only and then applied unchanged to the development and test data.
 
 ---
 
@@ -688,6 +701,7 @@ This is important because combining EPA and EEA data without station mapping cou
 Source timestamps will be converted into a consistent time representation before temporal aggregation.
 
 Time-zone handling will be explicitly recorded because the project uses measurements from multiple countries.
+Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly. This will only need to be applied to Athens in our project, as it is 1 hour ahead of UTC+1. However, those wishing to reproduce this project with new cities may need to make future adjustments for their chosen cities and stations.
 
 ---
 
@@ -813,7 +827,7 @@ The course requires at least 10,000 learning samples.
 
 This project is expected to exceed that requirement substantially.
 
-The proposed dataset currently consists of 17 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from either December 2022 or December 2023 onwards. 7 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
+The proposed dataset currently consists of 18 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from either December 2022 or December 2023 onwards. 7 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
 
 Before accounting for missing observations and data-quality restrictions, this represents approximately 1.04 million hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 345,000–348,000 3-hour station-time observations. 
 
@@ -908,7 +922,16 @@ Historical environmental measurements can be collected and transformed in batche
 
 ### 7. Leakage prevention is explicit
 
-Temporal features, preprocessing and model selection are designed so that future information cannot influence training.
+Source-independent canonicalisation and deterministic transformations are performed before splitting. Any transformation that learns parameters from the data is fitted using training data only.
+
+The following preprocessing needs to occur before the split:
+- parsing timestamps
+- unit standardisation
+- station mapping
+- identifying duplicates
+- source-quality filtering
+- hourly → 3-hour aggregation
+- constructing historical lag features
 
 ### 8. Data lineage matters
 
