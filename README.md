@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-This project develops an end-to-end AI/ML system for forecasting **3-hour mean PM2.5 concentration six hours ahead** at urban air-quality monitoring stations.
+This project develops an end-to-end AI/ML system for forecasting **3-hour mean PM2.5 concentration 6 hours ahead** at urban air-quality monitoring stations.
 
 The project treats the problem primarily as a **time-series and structured-data ML problem**. Historical PM2.5 observations are collected from official environmental monitoring sources, stored in cloud object storage, transformed into a common canonical dataset, analysed and converted to model features, and then used to train and evaluate several models.
 
 The main research question is:
 
-> **Can machine learning accurately forecast PM2.5 concentrations six hours ahead across different Irish and European cities using historical air-quality measurements?**
+> **Can machine learning accurately forecast PM2.5 concentrations 6 hours ahead across different Irish and European cities using historical air-quality measurements?**
 
 Two secondary questions are:
 
@@ -64,13 +64,13 @@ gs://<project-bucket>/
 │   |   ├── milan/
 │   |   │   ├── milanPascal/
 │   |   │   └── milanSenato/
-│   |   └── *paris*
-│   |       ├── *parisGennevilliers/*
-│   |       └── *parisSaintDenis/*
+│   |   └── paris
+│   |       ├── parisGennevilliers/
+│   |       └── parisSaintDenis/
 |   |
 │   ├── epa/
 │   │   ├── cork/
-│   │   ├── dublin
+│   │   ├── dublin/
 │   │   │   ├── dublinKilmainham/
 │   │   │   └── dublinRathmines/
 │   │   ├── galway/
@@ -78,21 +78,19 @@ gs://<project-bucket>/
 │   │   └── waterford/
 |   |
 │   └── uk_air/
-│       ├── beflast/
+│       ├── belfast/
 │       │   ├── belfastCentre/
 │       │   └── belfastStockman/
-│       ├── *derry/*
-│       └── *london/*
-│           ├── *londonBloomsbury/*
-│           └── *londonWestminster/*
+│       ├── derry/
+│       └── london/
+│           ├── londonBloomsbury/
+│           └── londonWestminster/
 │
 │
 ├── processed/
 ├── models/
 └── manifests/
 ```
-
-Note: stations witheheld from the Training data are in italics
 
 The raw files will be preserved **unchanged**. Processing will create separate derived datasets rather than overwriting the source data.
 
@@ -295,7 +293,7 @@ The EEA Air Quality Download Service will provide European monitoring time-serie
 
 ### EPA Ireland
 
-EPA unvalidated monitoring archives will provide Irish monitoring measurements.
+EPA hourly monitoring data will provide Irish monitoring measurements.
 
 ### UK-AIR
 
@@ -336,7 +334,7 @@ Here are the guides to downloading the raw data from each source:
 1. Go to interactive map here: https://uk-air.defra.gov.uk/interactive-map
 2. Zoom in and click on relevant stations (London Westminster, London Bloomsbury, Belfast Centre, Belfast Stockman, Derry)
 3. Select CSV data files for this site
-4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2026 and 2018.
+4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2025 and 2018.
 
 - EEA Europe (format Parquet):
 
@@ -434,7 +432,7 @@ Three cities are held out:
 - London
 - Paris
 
-These cities are excluded from training and model selection.
+These cities are excluded from training and model selection. The 2025 observations from these stations will be used to evaluate generalisation to unseen cities.
 
 This creates a second evaluation dimension:
 
@@ -446,7 +444,7 @@ Spatial generalisation:
 known cities → completely unseen cities
 ```
 
-The held-out cities must remain unseen across **all source systems**. The held-out cities must remain excluded from model development ragardless of source.
+The held-out cities must remain unseen across **all source systems**. The held-out cities must remain excluded from model development regardless of source.
 
 ---
 
@@ -512,7 +510,7 @@ The initial candidate feature set is:
 | `country` | Country containing the station | Categorical |
 | `latitude` | Monitoring-station latitude | Continuous |
 | `longitude` | Monitoring-station longitude | Continuous |
-| `target_pm25` | Mean PM2.5 six hours ahead | Continuous target |
+| `target_pm25` | Mean PM2.5 6 hours ahead | Continuous target |
 
 The features are deliberately based primarily on **historical PM2.5 and time/station information**.
 
@@ -582,11 +580,11 @@ The current collection scope is:
 
 ### EPA Ireland
 
-Unvalidated/Up to date Irish PM2.5 data for:
+Provisional/unvalidated Irish PM2.5 data for:
 - Kilmainham, Dublin
 - Rathmines, Dublin
 - University College Cork
-- Briarhill, Co. Galway (located slightly outside Galway city with data avaialable from December 2022 onwards)
+- Briarhill, Co. Galway (located slightly outside Galway city with data available from December 2022 onwards)
 - People's Park, Limerick
 - Paddy Browne's Road, Waterford
 
@@ -663,7 +661,7 @@ Calculate station/year coverage
         ↓
 Aggregate hourly → 3-hour measurements
         ↓
-Construct six-hour-ahead target
+Construct 6-hour-ahead target
         ↓
 Create historical lag features
         ↓
@@ -741,9 +739,81 @@ The project will not silently fill missing target observations.
 
 ## Target construction
 
+The raw data is first aggregated into **3-hour PM2.5 averages**.
+
+For each completed 3-hour input block, the model predicts the PM2.5 average for the 3-hour block **six hours later**.
+
+For example:
+
+```text
+Input block             Target block
+09:00–11:59     →       15:00–17:59
+```
+
+A target is only created when the required hourly measurements are available according to the predefined completeness rule.
+
+The target variable is therefore:
+
+**`target_pm25` = 3-hour mean PM2.5 concentration in the target block.**
+
+Each day is divided into eight fixed 3-hour blocks, and each input block is used to predict the corresponding block two periods (six hours) later.
+
+The time_block feature is 0-7 arranged thus:
+
+| `time_block` | Time period |
+|---:|---|
+| 0 | 00:00–02:59 |
+| 1 | 03:00–05:59 |
+| 2 | 06:00–08:59 |
+| 3 | 09:00–11:59 |
+| 4 | 12:00–14:59 |
+| 5 | 15:00–17:59 |
+| 6 | 18:00–20:59 |
+| 7 | 21:00–23:59 |
+
+---
+
+## Lag features
+
+The model also uses previous 3-hour PM2.5 averages as input features.
+
+For example, for the 09:00–11:59 input block:
+
+```text
+Previous blocks                         Input        Target
+
+00:00–02:59   03:00–05:59   06:00–08:59   09:00–11:59   14:00–16:59
+     ↓             ↓             ↓              ↓              ↓
+   lag_3         lag_2         lag_1        input block      target
+```
+
+The lag features therefore describe recent historical PM2.5 concentrations available before the target period.
+
+No measurements from the target block or any later period are used to create the lag features.
+
+---
+
+## Rolling features
+
+Rolling features summarise recent historical PM2.5 measurements.
+
+The initial features will include:
+
+* a recent rolling mean;
+* a recent rolling standard deviation.
+
+Only observations available before the target period are used.
+
+The rolling-window length will be treated as a configuration parameter and selected using the training/development data. The final 2025 test data will not be used to choose the window length.
+
+
+---
+
+## Target construction
+
 The target is:
 
-> **The 3-hour mean PM2.5 concentration six hours ahead.**
+> **The 3-hour mean PM2.5 concentration 6 hours ahead.**
 
 For example:
 
@@ -841,9 +911,9 @@ The course requires at least 10,000 learning samples.
 
 This project is expected to exceed that requirement substantially.
 
-The proposed dataset currently consists of 18 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from either December 2022 or December 2023 onwards. 7 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
+The proposed dataset currently consists of 18 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from December 2022 onwards. 7 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
 
-Before accounting for missing observations and data-quality restrictions, this represents approximately 1.04 million hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 345,000–348,000 3-hour station-time observations. 
+Before accounting for missing observations and data-quality restrictions, this represents approximately 1.04 million hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 348,000 3-hour station-time observations. 
 
 The final number of supervised learning samples will be lower after applying completeness requirements, quality checks, feature-history requirements and the 6-hour forecasting horizon. This should provide sufficient temporal and geographical diversity for investigating both forecasting performance and generalisation to unseen cities, while still remaining manageable for CPU-based classical ML and a modest PyTorch sequence model.
 
