@@ -31,14 +31,14 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 |---|---:|---|
 | **1. Raw data storage** | **1.0** | Raw source data will be stored unchanged in **Google Cloud Storage (GCS)** under source-specific `raw/` paths. GCS is appropriate because the raw datasets are historical files that need durable, scalable object storage and repeated batch access rather than transactional updates. |
 | **2. Processed data storage & file formats** | **1.0** | Processed canonical measurements and model features will be stored in **Parquet** in GCS. Parquet is appropriate for columnar analytical access to structured time-series data. Raw files remain in their original source formats. |
-| **3. Database / object storage decision** | **0.5** | GCS will be the authoritative object/data-lake layer. **BigQuery** will provide an analytical/query layer for SQL exploration and data-quality analysis. BigQuery may be abandoned for simplicity and to reduce setup time, as pandas should be sufficient for ~345k rows on Parquet files. A transactional SQL database is not required because the project has no transactional workload. |
+| **3. Database / object storage decision** | **0.5** | GCS will be the authoritative object/data-lake layer. **BigQuery** would provide an analytical/query layer for SQL exploration and data-quality analysis. BigQuery may be abandoned for simplicity and to reduce setup time, as pandas should be sufficient for ~345k rows on Parquet files. A transactional SQL database is not required because the project has no transactional workload. |
 | **4. Data versioning** | **0.5** | Source files will be identified by source, period, filename, download timestamp, checksum and pipeline version. Dataset versions will be linked to the raw-data version, preprocessing configuration and code version to provide data lineage. |
 | **5. Data access** | **1.0** | Python ingestion scripts will access official EEA, EPA Ireland and UK-AIR sources, download raw files and upload them to GCS. Training/preprocessing code will read versioned Parquet data from GCS, with either BigQuery or pandas used for analytical queries. Google Cloud authentication will use service-account/application-default credentials rather than embedded credentials. |
 | **6. Data split / validation strategy** | **2.0** | A chronological train/dev/test strategy will be used: **2018–2023 training (2022-2023 for Irish stations), 2024 development, 2025 final test**. 2026 is reserved for a future-data/model-update demonstration. Derry, London and Paris are geographical holdouts and are excluded from model development. Time-aware CV may be used within 2018–2023. Future information, test data and target-period observations will not influence training or feature construction. |
-| **7. Feature description** | **1.0** | Features include historical PM2.5 lags and rolling statistics, temporal variables, station type and geographical information, with an optional nearby-station PM2.5 feature. Each feature is constructed only from information available before the forecast target. |
+| **7. Feature description** | **1.0** | Features include historical PM2.5 lags and rolling statistics, temporal variables, station type and geographical information. Each feature is constructed only from information available before the forecast target. |
 | **8. Data types and formats** | **0.5** | The dataset contains numerical continuous data (PM2.5, coordinates), categorical data (station type, city, country), integer temporal variables, timestamps, station identifiers and quality flags. Raw sources include CSV and Parquet; processed data will use Parquet; manifests use JSONL. |
 | **9. Reproducibility of data collection** | **1.0** | Collection is implemented in version-controlled Python ingestion scripts. Source, URL/API parameters, country/city/station selection, pollutant, date range, filename, timestamp, checksum and pipeline version are recorded in a manifest. |
-| **10. Reproducibility of preprocessing** | **1.5** | Raw data will be parsed, standardised, mapped to canonical stations, checked for duplicates and quality issues, aggregated into 3-hour measurements, converted into six-hour-ahead targets, and transformed into historical lag/rolling/temporal features. The exact configuration, completeness rules and dataset version will be recorded so the processed dataset can be regenerated from the raw data. |
+| **10. Reproducibility of preprocessing** | **1.5** | Raw data will be parsed, standardised, mapped to canonical stations, checked for duplicates and quality issues, aggregated into 3-hour measurements, converted into 6-hour-ahead targets, and transformed into historical lag/rolling/temporal features. The exact configuration, completeness rules and dataset version will be recorded so the processed dataset can be regenerated from the raw data. |
 
 **Total: 10.0 points**
 
@@ -174,7 +174,10 @@ This acts as the project's object-storage/data-lake layer.
 
 ### BigQuery — analytical layer
 
-BigQuery is considered optional. The main reason for including it would be to demonstrate understanding. However, the ~345,000 rows in the Parquet files could be analysed more simply with pandas in seconds. The trade-off for implementing BigQuery would be increased setup time, including dataset creation, load jobs, and IAM permissions.
+BigQuery is considered optional. The main reason for including it would be to demonstrate understanding. 
+BigQuery is not required for scalability at the current dataset size. Its potential value is providing a managed SQL analytical layer and demonstrating integration between object storage and a cloud analytical warehouse.
+
+However, the ~345,000 rows in the Parquet files could be analysed more simply with pandas in seconds. The trade-off for implementing BigQuery would be increased setup time, including dataset creation, load jobs, and IAM permissions.
 
 BigQuery may be used where SQL-based exploration and analysis are useful.
 
@@ -197,11 +200,15 @@ BigQuery is useful for:
 
 The project will **not** treat BigQuery as a replacement for the raw data lake.
 
-BigQuery is not required at this dataset scale, local Parquet queries are sufficient. A final decision on whether or not to implement BigQuery will be made later in the project process.
+BigQuery is not required at this dataset scale, local Parquet queries are sufficient. However, a final decision on whether or not to implement BigQuery will be made later in the project process, based on workload and educational value rather than dataset size alone.
 
 ### Why not sharding?
 
-Sharding isn't necessary given the dataset comfortably fits in memory.
+### Why not sharding?
+
+The current dataset is approximately 1 million hourly observations and is expected to remain manageable as Parquet data for the project's batch-processing workload. Therefore, extensive manual sharding is not initially necessary.
+
+If the dataset or processing workload grows substantially, Parquet partitioning by year, station or another appropriate key can be introduced without changing the raw-data architecture.
 
 ### Why not Cloud SQL/PostgreSQL?
 
@@ -307,7 +314,7 @@ The ML pipeline will use:
 
 - `scikit-learn`
 - `xgboost`
-- `torch`
+- `torch` (optional)
 
 GCS access will use Google Cloud authentication through service-account/application-default credentials. Credentials will not be embedded in source code.
 
@@ -340,16 +347,16 @@ Here are the guides to downloading the raw data from each source:
 5. Select Download format Parquet and select Download under Download Actions
 6. Unzip downloaded files
 
-Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. This is not easy to find, but the best way is probably by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id.
+Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1 (UTC+2). Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. This is not easy to find, but the best way is probably by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id.
 
 - EPA Ireland (format CSV, downloaded from airquality.ie):
 
 1. Go to this url: https://airquality.ie/readings
-2. Select each station and repeat  - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Briarhill Co. Galway (close to Galway city, data only available from December 2022).
+2. Select each station and repeat - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Briarhill Co. Galway (close to Galway city, data only available from December 2022).
 3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
 4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data)
 
-Note: The reduced Training data timescale of 2022-2023 is a known limitation. Irish stations training on only 2 years (2022–2023) is a thin window for time-aware Cross-Validaton — barely one full seasonal cycle to fold across. This was a choice made due to a lack of earlier hourly PM2.5 data for Irish stations. The hope is that this won't hurt the model's ability to predict too severely.
+Note: The reduced Training data timescale of 2022-2023 is a known limitation. Irish stations training on only 2 years (2022–2023) is a thin window for time-aware cross-validaton, which provides substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This was a choice made due to a lack of earlier hourly PM2.5 data for Irish stations. The hope is that this won't hurt the model's ability to predict too severely.
 
 ---
 
@@ -441,7 +448,15 @@ known cities → completely unseen cities
 
 The held-out cities must remain unseen across **all source systems**.
 
-For example, London data from the EEA cannot accidentally enter training merely because UK-AIR London data was excluded.
+For example, London data from the EEA cannot accidentally enter training merely because UK-AIR London data was excluded. As stations are manually selected in advance this should not be a problem, unless somebody was to experiment by introducing the EEA data for London in addition to the UKAir data for example.
+
+The geographical holdout stations are fixed as part of the M1 experimental design. Their data may be stored and processed into the canonical dataset, but they are excluded from model fitting, feature-selection decisions and hyperparameter selection.
+
+### Why not sharding?
+
+The current dataset is approximately 1 million hourly observations and is expected to remain manageable as Parquet data for the project's batch-processing workload. Therefore, extensive manual sharding is not initially necessary.
+
+If the dataset or processing workload grows substantially, Parquet partitioning by year, station or another appropriate key can be introduced without changing the raw-data architecture.
 
 ---
 
@@ -476,20 +491,14 @@ For time-series features:
 
 - lag features use only historical observations;
 - rolling features use only historical observations;
-- nearby-station features use only historical observations;
 - target observations cannot enter feature calculations;
 - future measurements cannot be used to construct past features.
 
 **Deterministic vs Learned preprocessing:**
 
-Deterministic preprocessing, such as timestamp parsing, unit standardisation,
-station-ID mapping, duplicate detection, and fixed 3-hour aggregation rules,
-can be applied before the split because it does not learn parameters from the
-full dataset.
+Deterministic preprocessing, such as timestamp parsing, unit standardisation, station-ID mapping, duplicate detection, and fixed 3-hour aggregation rules, can be applied before the split because it does not learn parameters from the full dataset.
 
-Learned preprocessing, such as feature scaling, imputation parameters,
-normalisation, or dimensionality reduction, must be fitted using the training
-data only and then applied unchanged to the development and test data.
+Learned preprocessing, such as feature scaling, imputation parameters, normalisation, or dimensionality reduction, must be fitted using the training data only and then applied unchanged to the development and test data.
 
 ---
 
@@ -513,7 +522,6 @@ The initial feature set is:
 | `country` | Country containing the station | Categorical |
 | `latitude` | Monitoring-station latitude | Continuous |
 | `longitude` | Monitoring-station longitude | Continuous |
-| `nearby_pm25` | Historical PM2.5 from a manually selected nearby station | Optional, continuous |
 | `target_pm25` | Mean PM2.5 six hours ahead | Continuous target |
 
 The features are deliberately based primarily on **historical PM2.5 and time/station information**.
@@ -594,7 +602,7 @@ Unvalidated/Up to date Irish PM2.5 data for:
 
 **2022–2025**
 
-Validated data would have been preferred, however there was only validated daily data for a select few stations in Dublin and Cork. Unvalidated data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland, and their estimates are still likely accurate.
+Validated data would have been preferred, however there was only validated daily data for a select few stations in Dublin and Cork. Unvalidated data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2.
 
 ### UK-AIR
 
@@ -638,7 +646,7 @@ This means another student can rerun the collection code using the documented co
 
 The ingestion scripts will not manually edit the downloaded source files.
 
-A requirements.txt file will also be included to streamline and simplify any necessary installations.
+A requirements.txt file will also be included to streamline and simplify any necessary installations. Note that torch and google-cloud-bigquery will be included in requirements.txt, even though the decision has not yet been made on whether these will be implemented.
 
 ---
 
@@ -653,13 +661,7 @@ Official raw files
         ↓
 Parse source-specific formats
         ↓
-Select PM2.5
-        ↓
-Standardise column names
-        ↓
-Standardise units
-        ↓
-Standardise timestamps/time zones
+Standardise column names / units / timestamps
         ↓
 Map source station IDs → canonical station IDs
         ↓
@@ -668,8 +670,6 @@ Detect duplicates/conflicting records
 Apply source quality rules
         ↓
 Calculate station/year coverage
-        ↓
-Select eligible stations
         ↓
 Aggregate hourly → 3-hour measurements
         ↓
@@ -682,8 +682,6 @@ Create historical rolling features
 Create temporal features
         ↓
 Add station/geographical features
-        ↓
-Optionally add nearby-station feature
         ↓
 Create chronological/geographical splits
         ↓
@@ -718,7 +716,7 @@ This is important because combining EPA and EEA data without station mapping cou
 Source timestamps will be converted into a consistent time representation before temporal aggregation.
 
 Time-zone handling will be explicitly recorded because the project uses measurements from multiple countries.
-Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly. This will only need to be applied to Athens in our project, as it is 1 hour ahead of UTC+1. However, those wishing to reproduce this project with new cities may need to make future adjustments for their chosen cities and stations.
+Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly. This will only need to be applied to Athens in our project, as it is 1 hour ahead of UTC+1 (UTC+2). However, those wishing to reproduce this project with new cities may need to make future adjustments for their chosen cities and stations.
 
 ---
 
@@ -735,7 +733,7 @@ Monitoring stations may have:
 
 These will be identified during M2.
 
-The initial station-eligibility target is approximately **75% valid PM2.5 coverage per year**, subject to the actual data-quality analysis.
+The initial station-eligibility target is approximately 75% valid PM2.5 coverage per year. This is a predefined quality target rather than a result of the model evaluation, and the final threshold will be documented before the final dataset is constructed.
 
 The exact minimum number of valid hourly observations required to create a 3-hour mean will be specified in the preprocessing configuration before the final dataset is produced.
 
@@ -770,6 +768,18 @@ For example:
 ```
 
 A target will only be created when the required future measurements satisfy the predefined completeness rule.
+
+Defined forecast timestamp:
+
+```text
+Input block ending at t
+        ↓
+6-hour forecast horizon
+        ↓
+3-hour target block beginning at t+6h
+```
+
+This is limit ambiguity
 
 ---
 
@@ -890,17 +900,18 @@ EPA / EEA / UK-AIR
         ↓
        Parquet
         ↓
- ┌───────────────┐
- │   BigQuery    │
- │   Analytics   │
- └───────────────┘
+┌────────────────────────────┐
+│ Analytical layer           │
+│ pandas / Parquet           │
+│ BigQuery (optional)        │
+└────────────────────────────┘
         ↓
  Feature / sequence construction
         ↓
- ┌───────────┬──────────┬────────────┐
- │   Linear  │ XGBoost  │  PyTorch   │
- │ Regression│          │  GRU/LSTM  │
- └───────────┴──────────┴────────────┘
+┌────────────┬───────────┬──────────────────┐
+│   Linear   │  XGBoost  │ PyTorch GRU/LSTM │
+│ Regression │           │    (optional)    │
+└────────────┴───────────┴──────────────────┘
         ↓
       Model
         ↓
@@ -981,10 +992,9 @@ The following decisions are intentionally left open until the actual data has be
 3. How much missing data can be tolerated?
 4. How should source quality flags be handled?
 5. Should station ID/city be used as model features or retained only as metadata?
-6. Which nearby stations provide useful additional information?
-7. What historical sequence length should be supplied to the PyTorch model?
-8. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
-9. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
-10. Does the PyTorch sequence model provide additional predictive value beyond XGBoost?
+6. What historical sequence length should be supplied to the PyTorch model (if we choose to go ahead with PyTorch)?
+7. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
+8. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
+9. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
 
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
