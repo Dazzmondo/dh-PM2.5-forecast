@@ -57,16 +57,26 @@ gs://<project-bucket>/
 │
 ├── raw/
 │   ├── epa/
+│   │   ├── kilmainham/
+│   │   ├── rathmines/
+│   │   ├── cork/
+│   │   ├── galway/
+│   │   ├── limerick/
+│   │   ├── waterford/
 │   ├── uk_air/
-│   │   ├── belfast/
+│   │   ├── belfastCentre/
+│   │   ├── belfastStockman/
 │   │   ├── derry/
-│   │   └── london/
+│   │   └── londonBloomsbury/
+│   │   ├── londonWestminster/
 │   └── eea/
-│       ├── ireland/
-│       ├── france/
-│       ├── italy/
-│       ├── denmark/
-│       └── greece/
+│       ├── athensParaskevi/
+│       ├── athensLykovrisi/
+│       ├── copenhagen/
+│       ├── milanPascal/
+│       ├── milanSenato/
+│       ├── parisGennevilliers/
+│       └── parisSaintDenis/
 │
 ├── processed/
 ├── models/
@@ -123,7 +133,7 @@ Parquet is appropriate because it provides:
 
 This is a deliberate choice based on **access pattern**, rather than simply using CSV because it is familiar.
 
-CSV will still be retained where it is the original UK-AIR source format.
+CSV will still be retained where it is the original UK-AIR and EPA source format.
 
 The distinction between **data type and storage format** is important:
 
@@ -302,14 +312,13 @@ Here are the guides to downloading the raw data from each source:
 - EEA Europe (format Parquet):
 
 1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
-2. Set filters. Country to DK, FR, GR, IE, IT. Cities to Kobenhavn, Paris (Greater City), Athina, Dublin, Cork, Galway, Limerick, Waterford, Milano (Greater City). Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
+2. Set filters. Country to DK, FR, GR, IT. Cities to Kobenhavn, Paris (Greater City), Athina, Milano (Greater City). Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
 3. Fill in email.
 4. Set Temporal coverage (start date and end date). 1 January 2018 to date of your choosing (31/12/2025 recommended. Keep 2026 for new data).
-5. Select Download format Parquet
-6. Select Download under Download Actions
-7. Unzip downloaded files
+5. Select Download format Parquet and select Download under Download Actions
+6. Unzip downloaded files
 
-Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1.
+Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection.
 
 EPA Ireland station data:
 
@@ -317,14 +326,6 @@ EPA Ireland station data:
 2. Select each station and repeat  - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Eyre Square Galway (only available from 2023, Briarhill Co. Galway is an alternative)
 3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
 4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data)
-
-
-The 3 urls to download the raw data are below: 
-- EPA ( https://eparesearch.epa.ie/safer/iso19115/displayISO19115.jsp?isoID=5999 )
-- UKAir ( https://uk-air.defra.gov.uk/data/ )
-- EEA ( https://www.eea.europa.eu/en/datahub/datahubitem-view/778ef9f5-6293-4846-badd-56a29c70880d )
-
-Follow the instructions of each to download the respective raw data.
 
 ---
 
@@ -388,7 +389,7 @@ Comparison with Model v1
 
 This follows the lecture principle that a project should not immediately consume every available observation and then claim to simulate future data.
 
-The approximate split will be 75% Training, 12.5% Dev, 12.5% Test.
+The approximate split will be 75% Training for years 2018-2023 for non-Irish European stations and 2022-2023 for Irish stations, 12.5% Development/Validation for year 2024, and 12.5% Test for year 2025.
 
 ---
 
@@ -513,7 +514,7 @@ The project contains several types of structured/time-series data.
 | Station ID | Identifier | string |
 | Timestamp | Time-series/time data | timezone-aware datetime |
 | Quality flags | Boolean/categorical | boolean |
-| Raw EPA data | Structured tabular | Excel |
+| Raw EPA data | Structured tabular | CSV |
 | Raw UK-AIR data | Structured tabular | CSV |
 | Raw EEA data | Structured time-series | Parquet |
 | Processed data | Structured time-series | Parquet |
@@ -528,7 +529,7 @@ For example, PM2.5 is numerical time-series data, while Parquet is a storage for
 
 # 9. Reproducibility of Data Collection — 1.0 point
 
-Data collection will be automated through version-controlled Python ingestion scripts.
+Though the scripts are not completed yet, data collection will eventually be automated through version-controlled Python ingestion scripts.
 
 The collection configuration will specify:
 
@@ -546,17 +547,25 @@ The current collection scope is:
 
 ### EPA Ireland
 
-Validated Irish PM2.5 data:
+Validated Irish PM2.5 data for:
+- Kilmainham, Dublin
+- Rathmines, Dublin
+- University College Cork
+- Eyre Square, Galway (only has PM2.5 data from December 2023 onwards. Briarhill, Co. Galway is a viable alternative located slightly outside the city with data avaialable from December 2022 onwards)
+- People's Park, Limerick
+- Paddy Browne's Road, Waterford
 
-**2020–2024**
+**2022–2025**
 
 ### UK-AIR
 
 PM2.5 data for:
 
-- Belfast
+- Belfast Centre
+- Belfast Stockman
 - Derry
-- London
+- London Bloomsbury
+- London Westminster
 
 **2018–2025**
 
@@ -564,15 +573,17 @@ PM2.5 data for:
 
 PM2.5 data for:
 
-- Ireland
-- France
-- Italy
-- Denmark
-- Greece
+- Agia Paraskevi, Athens - EEA id: GR0039A
+- Lykovrisi, Athens - EEA id: GR0035A
+- Copenhagen - EEA id: DK0034A
+- Pascal, Milan - EEA id: IT1692A
+- Senato, Milan - EEA id: IT1016A
+- Gennevilliers, Paris - EEA id: FR04002
+- Saint-Denis, Paris - EEA id: FR04058
 
 **2018–2025**
 
-The exact station set will be finalised during M2 after coverage and quality analysis.
+Exact station candidates were chosen by manual analysis of their suitability based on a combination of location, prioritising large cities, and sufficient available historical data. This decision was made prior to ingestion.
 
 Every collection run records:
 
@@ -587,6 +598,8 @@ Every collection run records:
 This means another student can rerun the collection code using the documented configuration and identify exactly which source files were used.
 
 The ingestion scripts will not manually edit the downloaded source files.
+
+A requirements.txt file will also be included to streamline and simplify any necessary installations.
 
 ---
 
@@ -791,13 +804,11 @@ The course requires at least 10,000 learning samples.
 
 This project is expected to exceed that requirement substantially.
 
-There are approximately 23,000 possible 3-hour periods per station over an eight-year period.
+The proposed dataset currently consists of 17 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from either December 2022 or December 2023 onwards. 7 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
 
-With approximately 25–40 eligible stations, the theoretical number of station-time observations is on the order of **580,000–930,000** before accounting for missing data and coverage restrictions.
+Before accounting for missing observations and data-quality restrictions, this represents approximately 1.04 million hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 345,000–348,000 3-hour station-time observations. 
 
-The actual number of usable training examples will be determined by the M2 quality audit.
-
-The final dataset therefore should provide substantially more than the minimum 10,000 learning samples while still remaining manageable for CPU-based classical ML and a modest PyTorch sequence model.
+The final number of supervised learning samples will be lower after applying completeness requirements, quality checks, feature-history requirements and the 6-hour forecasting horizon. This should provide sufficient temporal and geographical diversity for investigating both forecasting performance and generalisation to unseen cities, while still remaining manageable for CPU-based classical ML and a modest PyTorch sequence model.
 
 ---
 
@@ -914,17 +925,15 @@ Derry, London and Paris are held out to investigate geographical generalisation.
 
 The following decisions are intentionally left open until the actual data has been analysed:
 
-1. Which specific monitoring stations satisfy the coverage requirements?
-2. What minimum hourly completeness should be required for a 3-hour observation?
-3. Which rolling-window lengths are most appropriate?
-4. How much missing data can be tolerated?
-5. How should source quality flags be handled?
-6. How should overlapping EPA/EEA observations be reconciled?
-7. Should station ID/city be used as model features or retained only as metadata?
-8. Which nearby stations provide useful additional information?
-9. What historical sequence length should be supplied to the PyTorch model?
-10. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
-11. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
-12. Does the PyTorch sequence model provide additional predictive value beyond XGBoost?
+1. What minimum hourly completeness should be required for a 3-hour observation?
+2. Which rolling-window lengths are most appropriate?
+3. How much missing data can be tolerated?
+4. How should source quality flags be handled?
+5. Should station ID/city be used as model features or retained only as metadata?
+6. Which nearby stations provide useful additional information?
+7. What historical sequence length should be supplied to the PyTorch model?
+8. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
+9. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
+10. Does the PyTorch sequence model provide additional predictive value beyond XGBoost?
 
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
