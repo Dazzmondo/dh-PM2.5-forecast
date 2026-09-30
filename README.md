@@ -88,8 +88,58 @@ gs://<project-bucket>/
 │
 │
 ├── processed/
-├── models/
-└── manifests/
+│   ├── canonical/
+│   │   └── measurements/
+│   │       ├── year=2022/
+│   │       ├── year=2023/
+│   │       └── ...
+│   │
+│   ├── three_hour/
+│   │   ├── year=2022/
+│   │   ├── year=2023/
+│   │   └── ...
+│   │
+│   ├── features/
+│   │   ├── year=2022/
+│   │   └── ...
+│   │
+│   └── splits/
+│       ├── train/
+│       ├── dev/
+│       └── test/
+│
+├── manifests/
+│   ├── raw_files.jsonl
+│   ├── dataset_versions.jsonl
+│   └── processing_runs.jsonl
+│
+├── metadata/
+│   ├── stations.parquet
+│   ├── source_metadata/
+│   └── data_dictionary.json
+│
+└── models/
+    ├── linear_regression/
+    │   └── v1/
+    │       ├── model.joblib
+    │       ├── config.yaml
+    │       ├── metrics.json
+    │       └── metadata.json
+    │
+    ├── xgboost/
+    │   └── v1/
+    │       ├── model.json
+    │       ├── config.yaml
+    │       ├── metrics.json
+    │       └── metadata.json
+    │
+    └── pytorch_gru/ (optional)
+        └── v1/
+            ├── model.pt
+            ├── config.yaml
+            ├── preprocessing.json
+            ├── metrics.json
+            └── metadata.json
 ```
 
 The raw files will be preserved **unchanged**. Processing will create separate derived datasets rather than overwriting the source data.
