@@ -330,7 +330,7 @@ Here are the guides to downloading the raw data from each source:
 5. Select Download format Parquet and select Download under Download Actions
 6. Unzip downloaded files
 
-Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection.
+Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. This is not easy to find, but the best way is probably by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id.
 
 - EPA Ireland (format CSV, downloaded from airquality.ie):
 
