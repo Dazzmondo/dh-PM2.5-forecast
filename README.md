@@ -356,7 +356,7 @@ The ingestion code will use Python tools including:
 - `NumPy`
 - `PyArrow`
 - Google Cloud Storage client libraries
-- BigQuery client libraries
+- BigQuery client libraries (optional)
 
 The ML pipeline will use:
 
@@ -395,7 +395,7 @@ Here are the guides to downloading the raw data from each source:
 5. Select Download format Parquet and select Download under Download Actions
 6. Unzip downloaded files
 
-Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1 (UTC+2). Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. This is not easy to find, but the best way is probably by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id.
+Note: EEA hourly data uses a fixed UTC+1 offset for every station regardless of country. This is normalised to UTC with a single constant conversion applied uniformly across all EEA stations. EPA and UK-AIR timestamps require no conversion. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. This is not easy to find, but the best way is probably by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id.
 
 - EPA Ireland (format CSV, downloaded from airquality.ie):
 
@@ -420,8 +420,9 @@ A random train/test split is inappropriate because it could allow future observa
 2018 ─────────────── 2023 | 2024 | 2025 | 2026
         TRAIN             DEV     TEST    UPDATE
 ```
+Note: Train split is 2022-2023 for Irish stations.
 
-### Training: 2018–2023
+### Training: 2018–2023 (2022-2023 for Irish stations)
 
 Used for fitting model parameters.
 
@@ -684,7 +685,7 @@ This means another student can rerun the collection code using the documented co
 
 The ingestion scripts will not manually edit the downloaded source files.
 
-A requirements.txt file will also be included to streamline and simplify any necessary installations. Note that torch and google-cloud-bigquery will be included in requirements.txt, even though the decision has not yet been made on whether these will be implemented.
+A requirements.txt file will also be included to streamline and simplify any necessary installations. Note that torch and google-cloud-bigquery will be included in requirements.txt, even though the decision has not yet been made on whether these will be implemented. They are currently commented out for this reason as are some M4 requirements.
 
 ---
 
@@ -832,7 +833,7 @@ For example, for the 09:00–11:59 input block:
 ```text
 Previous blocks                              Input        Target
 
-00:00–02:59   03:00–05:59   06:00–08:59   09:00–11:59   14:00–16:59
+00:00–02:59   03:00–05:59   06:00–08:59   09:00–11:59   15:00–17:59
      ↓             ↓             ↓             ↓            ↓
    lag_3         lag_2         lag_1      input block     target
 ```
@@ -1045,3 +1046,7 @@ The following decisions are intentionally left open until the actual data has be
 9. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
 
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
+
+---
+# Setup Guide (will be filled in later, README is intentionally designed to match peer-review marking scheme)
+
