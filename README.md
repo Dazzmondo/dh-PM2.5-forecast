@@ -307,7 +307,8 @@ This is appropriate because historical data is accumulated and processed in rela
 
 The future M4 system can additionally demonstrate new data arriving and triggering a batch update/retraining workflow. Full continuous streaming is not required for the initial training pipeline because the forecasting task does not require online learning at every individual measurement.
 
-***Manual raw data download guide***
+
+### Manual raw data download guide
 
 The aim will be to add 3 scripts to automate the raw data download process for each of the 3 sources - UKAir, EEA, and EPA, however the processes are different for each source. For now we will simply recommend downloading the raw data from each of the 3 sources manually. 
 
