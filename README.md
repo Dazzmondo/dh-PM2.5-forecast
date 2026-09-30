@@ -57,26 +57,32 @@ gs://<project-bucket>/
 │
 ├── raw/
 │   ├── epa/
-│   │   ├── kilmainham/
-│   │   ├── rathmines/
 │   │   ├── cork/
+│   │   ├── dublin
+│   │   │   ├── dublinKilmainham/
+│   │   │   └── dublinRathmines/
 │   │   ├── galway/
 │   │   ├── limerick/
-│   │   ├── waterford/
+│   │   └── waterford/
 │   ├── uk_air/
-│   │   ├── belfastCentre/
-│   │   ├── belfastStockman/
+│   │   ├── beflast/
+│   │   │   ├── belfastCentre/
+│   │   │   ├── belfastStockman/
 │   │   ├── derry/
-│   │   └── londonBloomsbury/
-│   │   ├── londonWestminster/
+│   │   └── london/
+│   │       ├── londonBloomsbury/
+│   │       └── londonWestminster/
 │   └── eea/
-│       ├── athensParaskevi/
-│       ├── athensLykovrisi/
+│       ├── athens/
+│       │   ├── athensLykovrisi/
+│       │   └── athensParaskevi/
 │       ├── copenhagen/
-│       ├── milanPascal/
-│       ├── milanSenato/
-│       ├── parisGennevilliers/
-│       └── parisSaintDenis/
+│       ├── milan/
+│       │   ├── milanPascal/
+│       │   └── milanSenato/
+│       └── paris
+│           ├── parisGennevilliers/
+│           └── parisSaintDenis/
 │
 ├── processed/
 ├── models/
@@ -320,7 +326,7 @@ Here are the guides to downloading the raw data from each source:
 
 Note: Hourly data is converted to UTC+1 time. This must be considered when looking at hourly data relating to Athens. Athens is 1 hour ahead of UTC+1. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection.
 
-EPA Ireland station data:
+- EPA Ireland station data:
 
 1. Go to this url: https://airquality.ie/readings
 2. Select each station and repeat  - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Eyre Square Galway (only available from 2023, Briarhill Co. Galway is an alternative)
