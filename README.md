@@ -103,7 +103,7 @@ GCS is appropriate because the raw data is primarily accessed through **batch pr
 The raw data sources are:
 
 - **European Environment Agency (EEA)** Air Quality Download Service
-- **Environmental Protection Agency Ireland (EPA)** current/unvalidated air-quality archive
+- **Environmental Protection Agency Ireland (EPA) / AirQuality.ie** current/provisional air-quality measurements
 - **UK-AIR** automatic monitoring data
 
 ---
@@ -204,8 +204,6 @@ BigQuery is not required at this dataset scale, local Parquet queries are suffic
 
 ### Why not sharding?
 
-### Why not sharding?
-
 The current dataset is approximately 1 million hourly observations and is expected to remain manageable as Parquet data for the project's batch-processing workload. Therefore, extensive manual sharding is not initially necessary.
 
 If the dataset or processing workload grows substantially, Parquet partitioning by year, station or another appropriate key can be introduced without changing the raw-data architecture.
@@ -252,6 +250,8 @@ gcs_path
 download_timestamp
 sha256
 pipeline_version
+validation_status
+source_timezone
 ```
 
 A processed dataset will additionally be associated with:
@@ -356,7 +356,7 @@ Note: Hourly data is converted to UTC+1 time. This must be considered when looki
 3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
 4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data)
 
-Note: The reduced Training data timescale of 2022-2023 is a known limitation. Irish stations training on only 2 years (2022–2023) is a thin window for time-aware cross-validaton, which provides substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This was a choice made due to a lack of earlier hourly PM2.5 data for Irish stations. The hope is that this won't hurt the model's ability to predict too severely.
+Note: Irish stations have only two years of training data (2022–2023), providing substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This is a known limitation caused by the lack of earlier hourly PM2.5 data for the selected Irish stations. The effect of this limitation on model performance will be evaluated empirically.
 
 ---
 
@@ -446,17 +446,7 @@ Spatial generalisation:
 known cities → completely unseen cities
 ```
 
-The held-out cities must remain unseen across **all source systems**.
-
-For example, London data from the EEA cannot accidentally enter training merely because UK-AIR London data was excluded. As stations are manually selected in advance this should not be a problem, unless somebody was to experiment by introducing the EEA data for London in addition to the UKAir data for example.
-
-The geographical holdout stations are fixed as part of the M1 experimental design. Their data may be stored and processed into the canonical dataset, but they are excluded from model fitting, feature-selection decisions and hyperparameter selection.
-
-### Why not sharding?
-
-The current dataset is approximately 1 million hourly observations and is expected to remain manageable as Parquet data for the project's batch-processing workload. Therefore, extensive manual sharding is not initially necessary.
-
-If the dataset or processing workload grows substantially, Parquet partitioning by year, station or another appropriate key can be introduced without changing the raw-data architecture.
+The held-out cities must remain unseen across **all source systems**. The held-out cities must remain excluded from model development ragardless of source.
 
 ---
 
@@ -504,7 +494,7 @@ Learned preprocessing, such as feature scaling, imputation parameters, normalisa
 
 # 7. Feature Description — 1.0 point
 
-The initial feature set is:
+The initial candidate feature set is:
 
 | **Variable** | **Definition** | **Type / Notes** |
 |---|---|---|
@@ -690,7 +680,7 @@ Write versioned Parquet datasets
 
 ## Station mapping
 
-Different data providers may use different station identifiers.
+Different data providers use different station identifiers. A canonical station mapping will translate each source-specific station ID into a project-specific canonical station ID while retaining the original source and source station ID.
 
 A canonical station mapping will therefore contain:
 
@@ -704,11 +694,6 @@ latitude
 longitude
 station_type
 ```
-
-If the same physical station appears in multiple sources, the source-specific IDs will be mapped to a single canonical identifier.
-
-This is important because combining EPA and EEA data without station mapping could create duplicate observations.
-
 ---
 
 ## Time standardisation
@@ -733,7 +718,7 @@ Monitoring stations may have:
 
 These will be identified during M2.
 
-The initial station-eligibility target is approximately 75% valid PM2.5 coverage per year. This is a predefined quality target rather than a result of the model evaluation, and the final threshold will be documented before the final dataset is constructed.
+An initial target of approximately 75% valid PM2.5 coverage per year will be used as a data-quality criterion. This is a predefined quality target rather than a result of the model evaluation.
 
 The exact minimum number of valid hourly observations required to create a 3-hour mean will be specified in the preprocessing configuration before the final dataset is produced.
 
@@ -779,7 +764,7 @@ Input block ending at t
 3-hour target block beginning at t+6h
 ```
 
-This is limit ambiguity
+This is intended to limit ambiguity
 
 ---
 
@@ -961,7 +946,8 @@ The following preprocessing needs to occur before the split:
 - identifying duplicates
 - source-quality filtering
 - hourly → 3-hour aggregation
-- constructing historical lag features
+
+Historical lag and rolling features are then constructed using only observations available before each forecast time, with no future target information included.
 
 ### 8. Data lineage matters
 
