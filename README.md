@@ -56,6 +56,18 @@ The proposed structure is:
 gs://<project-bucket>/
 │
 ├── raw/
+│   ├── eea/
+│   |   ├── athens/
+│   |   │   ├── athensLykovrisi/
+│   |   │   └── athensParaskevi/
+│   |   ├── copenhagen/
+│   |   ├── milan/
+│   |   │   ├── milanPascal/
+│   |   │   └── milanSenato/
+│   |   └── paris
+│   |       ├── parisGennevilliers/
+│   |       └── parisSaintDenis/
+|   |
 │   ├── epa/
 │   │   ├── cork/
 │   │   ├── dublin
@@ -64,25 +76,16 @@ gs://<project-bucket>/
 │   │   ├── galway/
 │   │   ├── limerick/
 │   │   └── waterford/
-│   ├── uk_air/
-│   │   ├── beflast/
-│   │   │   ├── belfastCentre/
-│   │   │   ├── belfastStockman/
-│   │   ├── derry/
-│   │   └── london/
-│   │       ├── londonBloomsbury/
-│   │       └── londonWestminster/
-│   └── eea/
-│       ├── athens/
-│       │   ├── athensLykovrisi/
-│       │   └── athensParaskevi/
-│       ├── copenhagen/
-│       ├── milan/
-│       │   ├── milanPascal/
-│       │   └── milanSenato/
-│       └── paris
-│           ├── parisGennevilliers/
-│           └── parisSaintDenis/
+|   |
+│   └── uk_air/
+│       ├── beflast/
+│       │   ├── belfastCentre/
+│       │   └── belfastStockman/
+│       ├── derry/
+│       └── london/
+│           ├── londonBloomsbury/
+│           └── londonWestminster/
+│
 │
 ├── processed/
 ├── models/
