@@ -35,8 +35,8 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 | **4. Data versioning** | **0.5** | Source files will be identified by source, period, filename, download timestamp, checksum and pipeline version. Dataset versions will be linked to the raw-data version, preprocessing configuration and code version to provide data lineage. |
 | **5. Data access** | **1.0** | Python ingestion scripts will access official EEA, EPA Ireland and UK-AIR sources, download raw files and upload them to GCS. Training/preprocessing code will read versioned Parquet data from GCS, with either BigQuery or pandas used for analytical queries. Google Cloud authentication will use service-account/application-default credentials rather than embedded credentials. |
 | **6. Data split / validation strategy** | **2.0** | A chronological train/dev/test strategy will be used: **2018–2023 training (2022-2023 for Irish stations), 2024 development, 2025 final test**. 2026 is reserved for a future-data/model-update demonstration. Derry, London and Paris are geographical holdouts and are excluded from model development. Time-aware CV may be used within 2018–2023. Future information, test data and target-period observations will not influence training or feature construction. |
-| **7. Feature description** | **1.0** | Features include historical PM2.5 lags and rolling statistics, temporal variables, station type and geographical information. Each feature is constructed only from information available before the forecast target. |
-| **8. Data types and formats** | **0.5** | The dataset contains numerical continuous data (PM2.5, coordinates), categorical data (station type, city, country), integer temporal variables, timestamps, station identifiers and quality flags. Raw sources include CSV and Parquet; processed data will use Parquet; manifests use JSONL. |
+| **7. Feature description** | **1.0** | Features include historical PM2.5 lags and rolling statistics, temporal variables, and geographical information. Each feature is constructed only from information available before the forecast target. |
+| **8. Data types and formats** | **0.5** | The dataset contains numerical continuous data (PM2.5, coordinates), categorical data (city, country), integer temporal variables, timestamps, station identifiers and quality flags. Raw sources include CSV and Parquet; processed data will use Parquet; manifests use JSONL. |
 | **9. Reproducibility of data collection** | **1.0** | Collection is implemented in version-controlled Python ingestion scripts. Source, URL/API parameters, country/city/station selection, pollutant, date range, filename, timestamp, checksum and pipeline version are recorded in a manifest. |
 | **10. Reproducibility of preprocessing** | **1.5** | Raw data will be parsed, standardised, mapped to canonical stations, checked for duplicates and quality issues, aggregated into 3-hour measurements, converted into 6-hour-ahead targets, and transformed into historical lag/rolling/temporal features. The exact configuration, completeness rules and dataset version will be recorded so the processed dataset can be regenerated from the raw data. |
 
@@ -79,8 +79,6 @@ gs://<project-bucket>/
 |   |
 │   └── uk_air/
 │       ├── belfast/
-│       │   ├── belfastCentre/
-│       │   └── belfastStockman/
 │       ├── derry/
 │       └── london/
 │           ├── londonBloomsbury/
@@ -197,7 +195,6 @@ CSV will still be retained where it is the original UK-AIR and EPA source format
 The distinction between **data type and storage format** is important:
 
 - PM2.5 is numerical time-series data.
-- Station type is categorical data.
 - A timestamp represents temporal data.
 - These data types can be represented using CSV, Parquet, database tables or other formats.
 
@@ -382,7 +379,7 @@ Here are the guides to downloading the raw data from each source:
 - UKAir (format CSV):
 
 1. Go to interactive map here: https://uk-air.defra.gov.uk/interactive-map
-2. Zoom in and click on relevant stations (London Westminster, London Bloomsbury, Belfast Centre, Belfast Stockman, Derry)
+2. Zoom in and click on relevant stations (London Westminster, London Bloomsbury, Belfast Centre, Derry)
 3. Select CSV data files for this site
 4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2025 and 2018.
 
@@ -556,7 +553,6 @@ The initial candidate feature set is:
 | `day_of_week` | Day of week | Categorical/integer |
 | `month` | Calendar month | Categorical/integer |
 | `season` | Meteorological season | Categorical |
-| `station_type` | Monitoring-station classification | Categorical |
 | `city` | City containing the station | Categorical/metadata |
 | `country` | Country containing the station | Categorical |
 | `latitude` | Monitoring-station latitude | Continuous |
@@ -577,7 +573,7 @@ Because unseen-city generalisation is a core research question, station and city
 
 The final M2 analysis will determine whether they should be model features, metadata only, or represented in a way that does not prevent spatial generalisation.
 
-Latitude, longitude and station type are potentially more appropriate for a model intended to generalise to unseen locations.
+Latitude and longitude are potentially more appropriate for a model intended to generalise to unseen locations.
 
 ---
 
@@ -593,7 +589,6 @@ The project contains several types of structured/time-series data.
 | Day of week | Categorical/discrete | integer/category |
 | Month | Categorical/discrete | integer/category |
 | Season | Categorical | string/category |
-| Station type | Categorical | string/category |
 | City/country | Categorical | string/category |
 | Station ID | Identifier | string |
 | Timestamp | Time-series/time data | timezone-aware datetime |
@@ -648,7 +643,6 @@ Validated data would have been preferred, however there was only validated daily
 PM2.5 data for:
 
 - Belfast Centre
-- Belfast Stockman
 - Derry
 - London Bloomsbury
 - London Westminster
@@ -741,7 +735,6 @@ city
 country
 latitude
 longitude
-station_type
 ```
 ---
 
@@ -903,7 +896,7 @@ The course requires at least 10,000 learning samples.
 
 This project is expected to exceed that requirement substantially.
 
-The proposed dataset currently consists of 18 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from December 2022 onwards. 7 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
+The proposed dataset currently consists of 17 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from December 2022 onwards. 6 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
 
 Before accounting for missing observations and data-quality restrictions, this represents approximately 1.04 million hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 348,000 3-hour station-time observations. 
 
