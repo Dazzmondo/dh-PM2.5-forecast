@@ -383,6 +383,8 @@ Here are the guides to downloading the raw data from each source:
 3. Select CSV data files for this site
 4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2025 and 2018.
 
+Note: You can find all relevant metadata for each station by clicking on the station and selecting site information.
+
 - EEA Europe (format Parquet):
 
 1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
@@ -392,17 +394,26 @@ Here are the guides to downloading the raw data from each source:
 5. Select Download format Parquet and select Download under Download Actions
 6. Unzip downloaded files
 
-Note: EEA hourly data uses a fixed UTC+1 offset for every station regardless of country. This is normalised to UTC with a single constant conversion applied uniformly across all EEA stations. EPA and UK-AIR timestamps require no conversion. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. You can find the full EEA metadata and filter by country here https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements to find its unique id under EOL code and Nat code. This metadata also displays longitude/latitude and other relevant info and can be downloaded into CSV files.
-Alternatively this can be found by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id. You can find longitude/latitude by clicking view station location which will bring you to its exact location on Google Maps.
+Note: EEA hourly data uses a fixed UTC+1 offset for every station regardless of country. This is normalised to UTC with a single constant conversion applied uniformly across all EEA stations. EPA and UK-AIR timestamps require no conversion. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. 
+
+The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. You can find the full metadata in the station_reference.csv file.
+
+You can find the full EEA metadata and filter by country here https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements to find its unique id under EOL code and Nat code. This metadata also displays latitude/longitude and other relevant info and can be downloaded into CSV files. 
+Even for station data downloaded from UKAir and EPA Ireland, it is recommended to download the EEA metadata CSV for the relevant country to get a consistent EU station id for each station, as well as other important metadata. This is due to its metadata generally being more complete and clear than EPA Ireland/AIrQuality.ie in particular.
+
+Alternatively this metadata can be found by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id. You can find longitude/latitude by clicking view station location which will bring you to its exact location on Google Maps.
 
 - EPA Ireland (format CSV, downloaded from airquality.ie):
 
 1. Go to this url: https://airquality.ie/readings
 2. Select each station and repeat - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Briarhill Co. Galway (close to Galway city, data only available from December 2022).
 3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
-4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data)
+4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data).
+5. It is recommended to merge these 6-month CSV files into 1 combined CSV file for each station which can be checked against and uploaded either instead of or alongside the separate 6-month raw data files. This might be determined to no longer represent raw data, in which case, either ignore this step or simply keep the merged files to compare locally instead of uploading into GCS. The raw unmerged 6-month CSV files should all be uploaded in this case.
 
-Note: Irish stations have only two years of training data (2022–2023), providing substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This is a known limitation caused by the lack of earlier hourly PM2.5 data for the selected Irish stations. The effect of this limitation on model performance will be evaluated empirically.
+Note: Irish stations have only two years of training data (2022–2023), providing substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This is a known limitation caused by the lack of earlier hourly PM2.5 data for the selected Irish stations. The effect of this limitation on model performance will be evaluated empirically. 
+
+You can find the easting/northing for each station at the bottom of the station page, e.g. https://airquality.ie/station/EPA-59 . This will need to be converted to latitude/longitude. Recommended to simply use the EEA metadata instead.
 
 ---
 
