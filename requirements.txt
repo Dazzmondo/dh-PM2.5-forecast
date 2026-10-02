@@ -3,6 +3,7 @@ numpy>=1.26
 pandas>=2.2
 pyarrow>=14.0        # Parquet read/write
 gcsfs>=2024.2         # lets pandas read/write gs:// paths directly
+tzdata>=2024.1        # IANA timezone database - required by zoneinfo on Windows
 
 # Plotting / EDA
 matplotlib>=3.8
