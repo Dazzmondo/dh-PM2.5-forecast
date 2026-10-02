@@ -61,9 +61,9 @@ gs://<project-bucket>/
 │   |   │   ├── athensLykovrisi/
 │   |   │   └── athensParaskevi/
 │   |   ├── copenhagen/
-│   |   ├── milan/
-│   |   │   ├── milanPascal/
-│   |   │   └── milanSenato/
+│   |   ├── madrid/
+│   |   │   ├── madridCuatroCaminos/
+│   |   │   └── madridEscuelasAguirre/
 │   |   └── paris
 │   |       ├── parisGennevilliers/
 │   |       └── parisSaintDenis/
@@ -82,7 +82,7 @@ gs://<project-bucket>/
 │       ├── derry/
 │       └── london/
 │           ├── londonBloomsbury/
-│           └── londonWestminster/
+│           └── londonKensington/
 │
 │
 ├── processed/
@@ -379,7 +379,7 @@ Here are the guides to downloading the raw data from each source:
 - UKAir (format CSV):
 
 1. Go to interactive map here: https://uk-air.defra.gov.uk/interactive-map
-2. Zoom in and click on relevant stations (London Westminster, London Bloomsbury, Belfast Centre, Derry)
+2. Zoom in and click on relevant stations (London Kensington, London Bloomsbury, Belfast Centre, Derry)
 3. Select CSV data files for this site
 4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2025 and 2018.
 
@@ -388,7 +388,7 @@ Note: You can find all relevant metadata for each station by clicking on the sta
 - EEA Europe (format Parquet):
 
 1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
-2. Set filters. Country to DK, FR, GR, IT. Cities to Kobenhavn, Paris (Greater City), Athina, Milano (Greater City). Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
+2. Set filters. Country to DK, FR, GR, IT. Cities to Kobenhavn, Paris (Greater City), Athina, Madrid. Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
 3. Fill in email.
 4. Set Temporal coverage (start date and end date). 1 January 2018 to date of your choosing (31/12/2025 recommended. Keep 2026 for new data).
 5. Select Download format Parquet and select Download under Download Actions
@@ -657,7 +657,7 @@ PM2.5 data for:
 - Belfast Centre
 - Derry
 - London Bloomsbury
-- London Westminster
+- London Kensington
 
 **2018–2025**
 
@@ -668,8 +668,8 @@ PM2.5 data for:
 - Agia Paraskevi, Athens - EEA id: GR0039A
 - Lykovrisi, Athens - EEA id: GR0035A
 - Copenhagen - EEA id: DK0034A
-- Pascal, Milan - EEA id: IT1692A
-- Senato, Milan - EEA id: IT1016A
+- Cuatro Caminos, Madrid - EEA id: ES1525A
+- Escuelas Aguirre, Madrid - EEA id: ES0118A
 - Gennevilliers, Paris - EEA id: FR04002
 - Saint-Denis, Paris - EEA id: FR04058
 
