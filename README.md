@@ -100,7 +100,7 @@ gs://<project-bucket>/
 │       ├── dev/
 |       ├── test/
 |       ├── held_out/
-│       └── future_update
+│       └── future_update/
 │
 ├── manifests/
 │   ├── raw_files.jsonl
@@ -297,14 +297,22 @@ Each raw-file manifest entry will contain information such as:
 | **pipeline_version** | `config.py` |
 | **git_commit** | `config.py` |
 
-A processed dataset will additionally be associated with:
+Each run of the storage step (store_preprocessed_data.py) appends one line to
+manifests/dataset_versions.jsonl, linking the processed dataset to the exact raw data and code that produced it:
 
-```text
-raw_data_version
-preprocessing_version
-feature_version
-git_commit
-```
+
+| Field | Origin |
+| :--- | :--- |
+| dataset_run_id | UTC timestamp of the run |
+| pipeline_version | config.py |
+| preprocessing_version, feature_version | store_preprocessed_data.py |
+| git_commit | config.py ("-dirty" if uncommitted changes) |
+| raw_data_version | SHA-256 of manifests/raw_files.jsonl |
+| station_reference_sha256 | SHA-256 of metadata/station_reference.csv |
+| row_counts | Rows per split |
+| config | Rolling window, target horizon, minimum valid hours, completeness threshold |
+| outputs | Per file written: gcs_path, sha256, size_bytes, rows |
+| created_timestamp_utc | Time of the run |
 
 This provides a lineage relationship such as:
 
@@ -383,6 +391,7 @@ Here are the guides to downloading the raw data from each source:
 
 Note: You can find all relevant metadata for each station by clicking on the station and selecting site information.
 
+
 - EEA Europe (format Parquet):
 
 1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
@@ -401,6 +410,7 @@ Even for station data downloaded from UKAir and EPA Ireland, it is recommended t
 
 Alternatively this metadata can be found by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id. You can find longitude/latitude by clicking view station location which will bring you to its exact location on Google Maps.
 
+
 - EPA Ireland (format CSV, downloaded from airquality.ie):
 
 1. Go to this url: https://airquality.ie/readings
@@ -412,6 +422,8 @@ Note: Irish stations have only two years of training data (2022–2023), providi
 
 You can find the easting/northing for each station at the bottom of the station page, e.g. https://airquality.ie/station/EPA-59 . This will need to be converted to latitude/longitude. Recommended to simply use the EEA metadata instead.
 
+
+## Timestamp conventions used by the pipeline:
 
 | Source | Label | Time zone | Action |
 | :--- | :--- | :--- | :--- |
@@ -653,7 +665,7 @@ Provisional/unvalidated Irish PM2.5 data for:
 
 **2022–2025**
 
-Validated data would have been preferred, however there was only validated daily data for 5 of the 6 stations from those dates and no hourly data. Unvalidated provisional data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2. 
+Validated data would have been preferred, however there was only validated daily data for 5 of the 6 stations (2018-2021) and no hourly data. Unvalidated provisional data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2. 
 
 If it is determined later that the 2022-2023 Training data for Irish stations is not sufficient to accurately train our model, the daily data may be used, though this is unlikely. A more plausible potential use of the daily data could be for validation by comparing daily means of the EPA hourly readings with the validated daily values.
 
@@ -684,16 +696,16 @@ PM2.5 data for:
 
 Exact station candidates were initially chosen by manual analysis of their suitability based on a combination of location, prioritising large cities, and sufficient available historical data. This decision was initially made prior to ingestion. After analysing the files, it was determined that Milan's 2 stations and London Westminster were lacking the required data to make them viable candidates. Thus, they were replaced by 2 Madrid stations and London N. Kensington. All other original candidates were retained.
 
-Every collection run records:
+Every collection run (each run of upload_raw_data.py) records:
 
-- local_path
+- local_path;
 - gcs_path;
 - checksum_sha256;
 - size_bytes;
 - file_modified_utc;
 - upload_timestamp_utc;
 - source;
-- pipeline version;
+- pipeline_version;
 - git_commit;
 
 This means another student can rerun the collection code using the documented configuration and identify exactly which source files were used.
@@ -790,7 +802,7 @@ Some obvious patterns have already been identified by an initial analysis of the
 
 An initial target of approximately 75% valid PM2.5 coverage per year will be used as a data-quality criterion. This is a predefined quality target rather than a result of the model evaluation.
 
-A block is valid with at least 2 of 3 hourly values.A feature row needs the input block, all 3 lags, all 8 rolling blocks and the target to be valid with nothing imputed. The 75% figure is a diagnostic. Failing station-years are flagged, not removed.
+A block is valid with at least 2 of 3 hourly values. A feature row needs the input block, all 3 lags, all 8 rolling blocks and the target to be valid with nothing imputed. The 75% figure is a diagnostic. Failing station-years are flagged, not removed.
 
 ---
 
@@ -798,7 +810,7 @@ A block is valid with at least 2 of 3 hourly values.A feature row needs the inpu
 
 Hourly measurements will be converted into **3-hour mean PM2.5 concentrations**.
 
-The aggregation rule will explicitly define:
+The aggregation rule defines:
 
 - the three-hour boundaries;
 - the minimum number of valid hourly observations required;
@@ -1057,17 +1069,18 @@ Derry, London and Paris are held out to investigate geographical generalisation.
 
 The following decisions are intentionally left open until the actual data has been analysed:
 
-1. What minimum hourly completeness should be required for a 3-hour observation?
+1. Is the initial rule of at least 2 of 3 valid hours appropriate?
+2. How should valid hours be handled?
 2. Which rolling-window lengths are most appropriate?
 3. How much missing data can be tolerated?
-4. How should source quality flags be handled?
-5. How should to treat negative readings and stations with no 2025 data be treated?
-6. Should station ID/city be used as model features or retained only as metadata?
-7. What historical sequence length should be supplied to the PyTorch model (if we choose to go ahead with PyTorch)?
-8. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
-9. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
-10. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
-11. Should time of day use time_block or a continuous local hour?
+5. How should negative readings be treated?
+6. How should stations with no 2025 data be handled in evaluation?
+7. Should station ID/city be used as model features or retained only as metadata?
+8. What historical sequence length should be supplied to the PyTorch model (if we choose to go ahead with PyTorch)?
+9. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
+10. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
+11. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
+12. Should time of day use time_block or a continuous local hour?
 
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
 
