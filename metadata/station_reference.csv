@@ -10,7 +10,7 @@ GB1060A,Derry Rosemount,Derry,GB,Europe/London,55.00282,-7.33118,uk_air,DERR,der
 GB0566A,London Bloomsbury,London,GB,Europe/London,51.52229,-0.12589,uk_air,CLL2,london/londonBloomsbury,UKA00211,bloomsbury,2018-01-01,EEA metadata UK.csv (report year 2020)
 GB0620A,London N. Kensington,London,GB,Europe/London,51.52105,-0.21349,uk_air,KC1,london/londonKensington,UKA00253,kensington,2018-01-01,EEA metadata UK.csv (report year 2020)
 GR0039A,Athens Agia Paraskevi,Athens,GR,Europe/Athens,37.99511,23.81942,eea,GR0039A,athens/athensParaskevi,,,2018-01-01,EEA metadata greece.csv (report year 2024)
-GR0035A,Athens Lykovrisi,Athens,GR,Europe/Athens,38.06779,23.78899,eea,GR0035A,athens/athensLykovrisi,,,2018-01-01,EEA metadata greece.csv (report year 2024)
+GR0003A,Athens Aristotelous,Athens,GR,Europe/Athens,37.98807,23.72762,eea,GR0003A,athens/athensAristotelous,,,2018-01-01,EEA metadata greece.csv (report year 2024)
 DK0034A,Copenhagen,Copenhagen,DK,Europe/Copenhagen,55.67430,12.57110,eea,DK0034A,copenhagen,,,2018-01-01,EEA metadata denmark.csv (report year 2025)
 ES1525A,Madrid Cuatro Caminos,Madrid,ES,Europe/Madrid,40.44528,-3.70639,eea,28079038,madrid/madridCuatroCaminos,,,2018-01-01,EEA metadata spain.csv (report year 2025)
 ES0118A,Madrid Escuelas Aguirre,Madrid,ES,Europe/Madrid,40.42167,-3.68222,eea,28079008,madrid/madridEscuelasAguirre,,,2018-01-01,EEA metadata spain.csv (report year 2025)

@@ -686,7 +686,7 @@ PM2.5 data for:
 
 - Agia Paraskevi, Athens - EEA id: GR0039A
 - Aristotelous, Athens - EEA id: GR0003A
-- Copenhagen - EEA id: DK0034A (no hourly data for 2025, could use daily data to test against four 6-hour estimates)
+- Copenhagen - EEA id: DK0034A (no hourly data for 2025)
 - Cuatro Caminos, Madrid - EEA id: ES1525A (Parquet code: 28079038)
 - Escuelas Aguirre, Madrid - EEA id: ES0118A (Parquet code: 28079008)
 - Gennevilliers, Paris - EEA id: FR04002
