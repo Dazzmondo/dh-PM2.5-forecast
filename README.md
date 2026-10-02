@@ -31,7 +31,7 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 |---|---:|---|
 | **1. Raw data storage** | **1.0** | Raw source data will be stored unchanged in **Google Cloud Storage (GCS)** under source-specific `raw/` paths. GCS is appropriate because the raw datasets are historical files that need durable, scalable object storage and repeated batch access rather than transactional updates. |
 | **2. Processed data storage & file formats** | **1.0** | Processed canonical measurements and model features will be stored in **Parquet** in GCS. Parquet is appropriate for columnar analytical access to structured time-series data. Raw files remain in their original source formats. |
-| **3. Database / object storage decision** | **0.5** | GCS will be the authoritative object/data-lake layer. **BigQuery** would provide an analytical/query layer for SQL exploration and data-quality analysis. BigQuery may be abandoned for simplicity and to reduce setup time, as pandas should be sufficient for ~345k rows on Parquet files. A transactional SQL database is not required because the project has no transactional workload. |
+| **3. Database / object storage decision** | **0.5** | GCS will be the authoritative object/data-lake layer. **BigQuery** would provide an analytical/query layer for SQL exploration and data-quality analysis. BigQuery may be abandoned for simplicity and to reduce setup time, as pandas should be sufficient for ~324k rows on Parquet files. A transactional SQL database is not required because the project has no transactional workload. |
 | **4. Data versioning** | **0.5** | Source files will be identified by source, period, filename, download timestamp, checksum and pipeline version. Dataset versions will be linked to the raw-data version, preprocessing configuration and code version to provide data lineage. |
 | **5. Data access** | **1.0** | Python ingestion scripts will access official EEA, EPA Ireland and UK-AIR sources, download raw files and upload them to GCS. Training/preprocessing code will read versioned Parquet data from GCS, with either BigQuery or pandas used for analytical queries. Google Cloud authentication will use service-account/application-default credentials rather than embedded credentials. |
 | **6. Data split / validation strategy** | **2.0** | A chronological train/dev/test strategy will be used: **2018–2023 training (2022-2023 for Irish stations), 2024 development, 2025 final test**. 2026 is reserved for a future-data/model-update demonstration. Derry, London and Paris are geographical holdouts and are excluded from model development. Time-aware CV may be used within 2018–2023. Future information, test data and target-period observations will not influence training or feature construction. |
@@ -222,7 +222,7 @@ This acts as the project's object-storage/data-lake layer.
 BigQuery is considered optional. The main reason for including it would be to demonstrate understanding. 
 BigQuery is not required for scalability at the current dataset size. Its potential value is providing a managed SQL analytical layer and demonstrating integration between object storage and a cloud analytical warehouse.
 
-However, the ~345,000 rows in the Parquet files could be analysed more simply with pandas in seconds. The trade-off for implementing BigQuery would be increased setup time, including dataset creation, load jobs, and IAM permissions.
+However, the ~324,000 rows in the Parquet files could be analysed more simply with pandas in seconds. The trade-off for implementing BigQuery would be increased setup time, including dataset creation, load jobs, and IAM permissions.
 
 BigQuery may be used where SQL-based exploration and analysis are useful.
 
@@ -249,7 +249,7 @@ BigQuery is not required at this dataset scale, local Parquet queries are suffic
 
 ### Why not sharding?
 
-The current dataset is approximately 1 million hourly observations and is expected to remain manageable as Parquet data for the project's batch-processing workload. Therefore, extensive manual sharding is not initially necessary.
+The current dataset is approximately 970,000 hourly observations and is expected to remain manageable as Parquet data for the project's batch-processing workload. Therefore, extensive manual sharding is not initially necessary.
 
 If the dataset or processing workload grows substantially, Parquet partitioning by year, station or another appropriate key can be introduced without changing the raw-data architecture.
 
@@ -379,7 +379,7 @@ Here are the guides to downloading the raw data from each source:
 - UKAir (format CSV):
 
 1. Go to interactive map here: https://uk-air.defra.gov.uk/interactive-map
-2. Zoom in and click on relevant stations (London Kensington, London Bloomsbury, Belfast Centre, Derry)
+2. Zoom in and click on relevant stations (London N. Kensington, London Bloomsbury, Belfast Centre, Derry)
 3. Select CSV data files for this site
 4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2025 and 2018.
 
@@ -388,18 +388,18 @@ Note: You can find all relevant metadata for each station by clicking on the sta
 - EEA Europe (format Parquet):
 
 1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
-2. Set filters. Country to DK, FR, GR, IT. Cities to Kobenhavn, Paris (Greater City), Athina, Madrid. Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
+2. Set filters. Country to DK, FR, GR, ES. Cities to Kobenhavn, Paris (Greater City), Athina, Madrid. Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
 3. Fill in email.
 4. Set Temporal coverage (start date and end date). 1 January 2018 to date of your choosing (31/12/2025 recommended. Keep 2026 for new data).
 5. Select Download format Parquet and select Download under Download Actions
 6. Unzip downloaded files
 
-Note: EEA hourly data uses a fixed UTC+1 offset for every station regardless of country. This is normalised to UTC with a single constant conversion applied uniformly across all EEA stations. EPA and UK-AIR timestamps require no conversion. Data from 2025 onwards is provisional in contrast to the verified data prior, so this could theoretically produce minor inconsistencies with 2025 Test year. 
+Note: EEA hourly files are converted to UTC+1 for every country while daily files are not. EPA and UK-AIR need no time-zone conversion, but both are hour-ending, and the pipeline shifts them back one hour. This is explicitly stated in the EEA and UKAir documentation, whereas it is simply inferred from an anlysis of the data in the case of EPA data.
 
 The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. You can find the full metadata in the station_reference.csv file.
 
-You can find the full EEA metadata and filter by country here https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements to find its unique id under EOL code and Nat code. This metadata also displays latitude/longitude and other relevant info and can be downloaded into CSV files. 
-Even for station data downloaded from UKAir and EPA Ireland, it is recommended to download the EEA metadata CSV for the relevant country to get a consistent EU station id for each station, as well as other important metadata. This is due to its metadata generally being more complete and clear than EPA Ireland/AIrQuality.ie in particular.
+You can find the full EEA metadata and filter by country here https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements to find its unique id under EoI code and Nat code. This metadata also displays latitude/longitude and other relevant info and can be downloaded into CSV files. 
+Even for station data downloaded from UKAir and EPA Ireland, it is recommended to download the EEA metadata CSV for the relevant country to get a consistent EU station id for each station, as well as other important metadata. This is due to its metadata generally being more complete and clear than EPA Ireland/AirQuality.ie in particular.
 
 Alternatively this metadata can be found by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id. You can find longitude/latitude by clicking view station location which will bring you to its exact location on Google Maps.
 
@@ -409,7 +409,6 @@ Alternatively this metadata can be found by checking each station in the city on
 2. Select each station and repeat - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Briarhill Co. Galway (close to Galway city, data only available from December 2022).
 3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
 4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data).
-5. It is recommended to merge these 6-month CSV files into 1 combined CSV file for each station which can be checked against and uploaded either instead of or alongside the separate 6-month raw data files. This might be determined to no longer represent raw data, in which case, either ignore this step or simply keep the merged files to compare locally instead of uploading into GCS. The raw unmerged 6-month CSV files should all be uploaded in this case.
 
 Note: Irish stations have only two years of training data (2022–2023), providing substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This is a known limitation caused by the lack of earlier hourly PM2.5 data for the selected Irish stations. The effect of this limitation on model performance will be evaluated empirically. 
 
@@ -639,7 +638,7 @@ The current collection scope is:
 ### EPA Ireland
 
 Provisional/unvalidated Irish PM2.5 data for:
-- Kilmainham, Dublin
+- Kilmainham, Dublin (missing data between 30 Jan 2025 and 3 Jan 2026)
 - Rathmines, Dublin
 - University College Cork
 - Briarhill, Co. Galway (located slightly outside Galway city with data available from December 2022 onwards)
@@ -648,7 +647,9 @@ Provisional/unvalidated Irish PM2.5 data for:
 
 **2022–2025**
 
-Validated data would have been preferred, however there was only validated daily data for a select few stations in Dublin and Cork. Unvalidated data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2.
+Validated data would have been preferred, however there was only validated daily data for a select few stations in Dublin and Cork. Unvalidated data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2. 
+
+If it is determined later that the 2022-2023 Training data for Irish stations is not sufficient to accurately train our model, the daily data may be used, though this is unlikely. A more plausible potential use of the daily data could be for validation by comparing it against our four 6-hour estimates.
 
 ### UK-AIR
 
@@ -657,7 +658,7 @@ PM2.5 data for:
 - Belfast Centre
 - Derry
 - London Bloomsbury
-- London Kensington
+- London N. Kensington
 
 **2018–2025**
 
@@ -666,7 +667,7 @@ PM2.5 data for:
 PM2.5 data for:
 
 - Agia Paraskevi, Athens - EEA id: GR0039A
-- Lykovrisi, Athens - EEA id: GR0035A
+- Lykovrisi, Athens - EEA id: GR0035A (no valid data between January and August 2021)
 - Copenhagen - EEA id: DK0034A
 - Cuatro Caminos, Madrid - EEA id: ES1525A
 - Escuelas Aguirre, Madrid - EEA id: ES0118A
@@ -675,7 +676,7 @@ PM2.5 data for:
 
 **2018–2025**
 
-Exact station candidates were chosen by manual analysis of their suitability based on a combination of location, prioritising large cities, and sufficient available historical data. This decision was made prior to ingestion.
+Exact station candidates were initially chosen by manual analysis of their suitability based on a combination of location, prioritising large cities, and sufficient available historical data. This decision was initially made prior to ingestion. After analysing the files, it was determined that Milan's 2 stations and London Westminster were lacking the required data to make them viable candidates. Thus, they were replaced by 2 Madrid stations and London N. Kensington. All other original candidates were retained.
 
 Every collection run records:
 
@@ -740,7 +741,7 @@ Different data providers use different station identifiers. A canonical station 
 A canonical station mapping will therefore contain:
 
 ```text
-canonical_station_id
+station_id (EU id)
 source
 source_station_id
 city
@@ -755,7 +756,7 @@ longitude
 Source timestamps will be converted into a consistent time representation before temporal aggregation.
 
 Time-zone handling will be explicitly recorded because the project uses measurements from multiple countries.
-Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly. This will only need to be applied to Athens in our project, as it is 1 hour ahead of UTC+1 (UTC+2). However, those wishing to reproduce this project with new cities may need to make future adjustments for their chosen cities and stations.
+Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly.
 
 ---
 
@@ -910,7 +911,7 @@ This project is expected to exceed that requirement substantially.
 
 The proposed dataset currently consists of 17 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from December 2022 onwards. 6 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
 
-Before accounting for missing observations and data-quality restrictions, this represents approximately 1.04 million hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 348,000 3-hour station-time observations. 
+Before accounting for missing observations and data-quality restrictions, this represents approximately 970,000 hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 348,000 3-hour station-time observations. 
 
 The final number of supervised learning samples will be lower after applying completeness requirements, quality checks, feature-history requirements and the 6-hour forecasting horizon. This should provide sufficient temporal and geographical diversity for investigating both forecasting performance and generalisation to unseen cities, while still remaining manageable for CPU-based classical ML and a modest PyTorch sequence model.
 
@@ -931,7 +932,7 @@ The main legal considerations are therefore:
 - not redistributing data where the source terms prohibit it;
 - securing GCS access appropriately.
 
-Because the project uses official environmental monitoring data, personal-data risks are expected to be substantially lower than for datasets containing individuals, but the source licence and reuse terms will still be checked before final publication or redistribution.
+Because the project uses official environmental monitoring data, personal-data risks are expected to be substantially lower than for datasets containing individuals. The source licence and reuse terms has been checked before final publication or redistribution.
 
 ---
 
