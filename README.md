@@ -157,7 +157,10 @@ Planned structure:
 ```text
 processed/
 ├── canonical/
-│   └── canonical_measurements.parquet
+│   └── canonical_hourly.parquet
+|
+├── three_hour/
+│   └── three_hour_aggregated.parquet
 │
 ├── features/
 │   └── pm25_features.parquet
@@ -278,15 +281,18 @@ Therefore, dataset versioning will be explicit.
 
 Each raw-file manifest entry will contain information such as:
 
-| **Field** | **Source** |
-| local_path | the file's path on your machine |
-| gcs_path | raw/ plus the path under raw_data/ |
-|checksum_sha256 | hash of the file contents, computed before upload |
-|size_bytes | file size |
-|file_modified_utc | the file's last-modified time |
-|upload_timestamp_utc | time of upload |
-| source | first folder: epa, uk_air or eea |
-|pipeline_version, git_commit |config.py |
+
+| Field | Source | Description |
+| :--- | :--- | :--- |
+| **local_path** | - | The file's path on your machine |
+| **gcs_path** | - | `raw/` plus the path under `raw_data/` |
+| **checksum_sha256** | - | Hash of the file contents, computed before upload |
+| **size_bytes** | - | File size |
+| **file_modified_utc** | - | The file's last-modified time |
+| **upload_timestamp_utc** | - | Time of upload |
+| **source** | - | First folder: `epa`, `uk_air`, or `eea` |
+| **pipeline_version** | `config.py` | - |
+| **git_commit** | `config.py` | - |
 
 A processed dataset will additionally be associated with:
 
