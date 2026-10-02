@@ -32,12 +32,12 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 | **1. Raw data storage** | **1.0** | Raw source data will be stored unchanged in **Google Cloud Storage (GCS)** under source-specific `raw/` paths. GCS is appropriate because the raw datasets are historical files that need durable, scalable object storage and repeated batch access rather than transactional updates. |
 | **2. Processed data storage & file formats** | **1.0** | Processed canonical measurements and model features will be stored in **Parquet** in GCS. Parquet is appropriate for columnar analytical access to structured time-series data. Raw files remain in their original source formats. |
 | **3. Database / object storage decision** | **0.5** | GCS will be the authoritative object/data-lake layer. **BigQuery** would provide an analytical/query layer for SQL exploration and data-quality analysis. BigQuery may be abandoned for simplicity and to reduce setup time, as pandas should be sufficient for ~324k rows on Parquet files. A transactional SQL database is not required because the project has no transactional workload. |
-| **4. Data versioning** | **0.5** | Source files will be identified by source, period, filename, download timestamp, checksum and pipeline version. Dataset versions will be linked to the raw-data version, preprocessing configuration and code version to provide data lineage. |
+| **4. Data versioning** | **0.5** | Raw files are identified by source, path/filename, SHA-256 checksum, size, last-modified and upload timestamps, pipeline version and git commit. Dataset versions are linked to the raw-data version, preprocessing configuration and code version to provide data lineage. |
 | **5. Data access** | **1.0** | Python ingestion scripts will access official EEA, EPA Ireland and UK-AIR sources, download raw files and upload them to GCS. Training/preprocessing code will read versioned Parquet data from GCS, with either BigQuery or pandas used for analytical queries. Google Cloud authentication will use service-account/application-default credentials rather than embedded credentials. |
 | **6. Data split / validation strategy** | **2.0** | A chronological train/dev/test strategy will be used: **2018–2023 training (2022-2023 for Irish stations), 2024 development, 2025 final test**. 2026 is reserved for a future-data/model-update demonstration. Derry, London and Paris are geographical holdouts and are excluded from model development. Time-aware CV may be used within 2018–2023. Future information, test data and target-period observations will not influence training or feature construction. |
 | **7. Feature description** | **1.0** | Features include historical PM2.5 lags and rolling statistics, temporal variables, and geographical information. Each feature is constructed only from information available before the forecast target. |
 | **8. Data types and formats** | **0.5** | The dataset contains numerical continuous data (PM2.5, coordinates), categorical data (city, country), integer temporal variables, timestamps, station identifiers and quality flags. Raw sources include CSV and Parquet; processed data will use Parquet; manifests use JSONL. |
-| **9. Reproducibility of data collection** | **1.0** | Collection is implemented in version-controlled Python ingestion scripts. Source, URL/API parameters, country/city/station selection, pollutant, date range, filename, timestamp, checksum and pipeline version are recorded in a manifest. |
+| **9. Reproducibility of data collection** | **1.0** | Collection is implemented in version-controlled Python ingestion scripts. Collection parameters (source, station, pollutant, date range) are documented in this README and metadata/station_reference.csv. Each raw file's path, checksum, size, timestamps, pipeline version and git commit are recorded in a manifest. |
 | **10. Reproducibility of preprocessing** | **1.5** | Raw data will be parsed, standardised, mapped to canonical stations, checked for duplicates and quality issues, aggregated into 3-hour measurements, converted into 6-hour-ahead targets, and transformed into historical lag/rolling/temporal features. The exact configuration, completeness rules and dataset version will be recorded so the processed dataset can be regenerated from the raw data. |
 
 **Total: 10.0 points**
@@ -98,7 +98,9 @@ gs://<project-bucket>/
 │   └── splits/
 │       ├── train/
 │       ├── dev/
-│       └── test/
+|       ├── test/
+|       ├── held_out/
+│       └── future_update
 │
 ├── manifests/
 │   ├── raw_files.jsonl
@@ -168,7 +170,9 @@ processed/
 └── splits/
     ├── train/
     ├── dev/
-    └── test/
+    ├── test/
+    ├── held_out/
+    └── future_update/  
 ```
 
 ### Why Parquet?
@@ -225,9 +229,9 @@ A possible dataset is:
 
 ```text
 pm25_dataset
-├── canonical_measurements
-├── station_metadata
-└── three_hour_measurements
+├── canonical_hourly
+├── station_reference
+└── three_hour_aggregated
 ```
 
 BigQuery is useful for:
@@ -281,7 +285,7 @@ Therefore, dataset versioning will be explicit.
 
 Each raw-file manifest entry will contain information such as:
 
-| Field | Source |
+| Field | Origin |
 | :--- | :--- |
 | **local_path** | The file's path on your machine |
 | **gcs_path** | `raw/` plus the path under `raw_data/` |
@@ -320,7 +324,7 @@ The objective is to be able to answer:
 
 > **Which exact data, preprocessing code and feature definitions produced this model?**
 
-Raw files will not silently be overwritten when a source publishes revised data.
+Raw files will not silently be overwritten when a source publishes revised data. Bucket versioning is enabled and each file's checksum is recorded.
 
 ---
 
@@ -382,7 +386,7 @@ Note: You can find all relevant metadata for each station by clicking on the sta
 - EEA Europe (format Parquet):
 
 1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
-2. Set filters. Country to DK, FR, GR, ES. Cities to Kobenhavn, Paris (Greater City), Athina, Madrid. Pollutants to PM2.5. Dataset to Primary validated data (E1a) for 2018 to 2024. For data after 2024 you can set Dataset to Up To Date data (E2a). Type to Hourly data.
+2. Set filters. Country to DK, FR, GR, ES. Cities to Kobenhavn, Paris (Greater City), Athina, Madrid. Pollutants to PM2.5. Dataset to Primary validated data (E1a). Type to Hourly data. Note: if data is missing, try changing Type to Hourly/Daily data.
 3. Fill in email.
 4. Set Temporal coverage (start date and end date). 1 January 2018 to date of your choosing (31/12/2025 recommended. Keep 2026 for new data).
 5. Select Download format Parquet and select Download under Download Actions
@@ -407,6 +411,13 @@ Alternatively this metadata can be found by checking each station in the city on
 Note: Irish stations have only two years of training data (2022–2023), providing substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This is a known limitation caused by the lack of earlier hourly PM2.5 data for the selected Irish stations. The effect of this limitation on model performance will be evaluated empirically. 
 
 You can find the easting/northing for each station at the bottom of the station page, e.g. https://airquality.ie/station/EPA-59 . This will need to be converted to latitude/longitude. Recommended to simply use the EEA metadata instead.
+
+
+| Source | Label | Time zone | Action |
+| :--- | :--- | :--- | :--- |
+| EEA hourly | interval start | UTC+1 (EEA converts) | −1 h |
+| UK-AIR | hour ending | GMT | −1 h |
+| EPA | hour ending | UTC (both inferred) | −1 h |
 
 ---
 
@@ -598,7 +609,7 @@ The project contains several types of structured/time-series data.
 | City/country | Categorical | string/category |
 | Station ID | Identifier | string |
 | Timestamp | Time-series/time data | timezone-aware datetime |
-| Quality flags | Boolean/categorical | boolean |
+| Valid Hours | Discrete/categorical | integer |
 | Raw EPA data | Structured tabular | CSV |
 | Raw UK-AIR data | Structured tabular | CSV |
 | Raw EEA data | Structured time-series | Parquet |
@@ -644,7 +655,7 @@ Provisional/unvalidated Irish PM2.5 data for:
 
 Validated data would have been preferred, however there was only validated daily data for 5 of the 6 stations from those dates and no hourly data. Unvalidated provisional data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2. 
 
-If it is determined later that the 2022-2023 Training data for Irish stations is not sufficient to accurately train our model, the daily data may be used, though this is unlikely. A more plausible potential use of the daily data could be for validation by comparing it against our four 6-hour estimates.
+If it is determined later that the 2022-2023 Training data for Irish stations is not sufficient to accurately train our model, the daily data may be used, though this is unlikely. A more plausible potential use of the daily data could be for validation by comparing daily means of the EPA hourly readings with the validated daily values.
 
 ### UK-AIR
 
@@ -733,9 +744,9 @@ Write versioned Parquet datasets
 
 ## Station mapping
 
-Every station is keyed on its EU code (station_id) in metadata/station_reference.csv, which records station_name, city, country, timezone, latitude, longitude, source, source_download_id, raw_folder, uk_air_internal_id, source_name_check, availability_start and coordinates_source.
+Every station is keyed on its EU code (station_id) in metadata/station_reference.csv.
 
-A canonical station mapping will therefore contain:
+Station mapping will contain:
 
 ```text
 station_id (EU id)
@@ -775,11 +786,11 @@ Monitoring stations may have:
 - provisional observations;
 - revised observations.
 
-These will be identified during M2.
+Some obvious patterns have already been identified by an initial analysis of the data. This is why the initial proposals of 2 Milan stations and London Westminster were rejected and replaced with 2 Madrid stations and London N. Kensington. These observations will be analysed and scrutinised more thoroughly during M2.
 
 An initial target of approximately 75% valid PM2.5 coverage per year will be used as a data-quality criterion. This is a predefined quality target rather than a result of the model evaluation.
 
-The exact minimum number of valid hourly observations required to create a 3-hour mean will be specified in the preprocessing configuration before the final dataset is produced.
+A block is valid with at least 2 of 3 hourly values.A feature row needs the input block, all 3 lags, all 8 rolling blocks and the target to be valid with nothing imputed. The 75% figure is a diagnostic. Failing station-years are flagged, not removed.
 
 ---
 
@@ -1050,12 +1061,13 @@ The following decisions are intentionally left open until the actual data has be
 2. Which rolling-window lengths are most appropriate?
 3. How much missing data can be tolerated?
 4. How should source quality flags be handled?
-5. Should station ID/city be used as model features or retained only as metadata?
-6. What historical sequence length should be supplied to the PyTorch model (if we choose to go ahead with PyTorch)?
-7. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
-8. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
-9. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
-10. Should time of day use time_block or a continuous local hour?
+5. How should to treat negative readings and stations with no 2025 data be treated?
+6. Should station ID/city be used as model features or retained only as metadata?
+7. What historical sequence length should be supplied to the PyTorch model (if we choose to go ahead with PyTorch)?
+8. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
+9. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
+10. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
+11. Should time of day use time_block or a continuous local hour?
 
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
 
