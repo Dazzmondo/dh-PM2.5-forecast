@@ -58,7 +58,7 @@ gs://<project-bucket>/
 ├── raw/
 │   ├── eea/
 │   |   ├── athens/
-│   |   │   ├── athensLykovrisi/
+│   |   │   ├── athensAristotelous/
 │   |   │   └── athensParaskevi/
 │   |   ├── copenhagen/
 │   |   ├── madrid/
@@ -621,7 +621,7 @@ The project contains several types of structured/time-series data.
 | City/country | Categorical | string/category |
 | Station ID | Identifier | string |
 | Timestamp | Time-series/time data | timezone-aware datetime |
-| Valid Hours | Discrete/categorical | integer |
+| Valid Hours | Discrete numerical | integer 0-3 |
 | Raw EPA data | Structured tabular | CSV |
 | Raw UK-AIR data | Structured tabular | CSV |
 | Raw EEA data | Structured time-series | Parquet |
@@ -685,7 +685,7 @@ PM2.5 data for:
 PM2.5 data for:
 
 - Agia Paraskevi, Athens - EEA id: GR0039A
-- Lykovrisi, Athens - EEA id: GR0035A (no valid data between 10 Dec 2020 and 24 Sept 2021)
+- Aristotelous, Athens - EEA id: GR0003A
 - Copenhagen - EEA id: DK0034A (no hourly data for 2025, could use daily data to test against four 6-hour estimates)
 - Cuatro Caminos, Madrid - EEA id: ES1525A (Parquet code: 28079038)
 - Escuelas Aguirre, Madrid - EEA id: ES0118A (Parquet code: 28079008)
@@ -694,7 +694,7 @@ PM2.5 data for:
 
 **2018–2025**
 
-Exact station candidates were initially chosen by manual analysis of their suitability based on a combination of location, prioritising large cities, and sufficient available historical data. This decision was initially made prior to ingestion. After analysing the files, it was determined that Milan's 2 stations and London Westminster were lacking the required data to make them viable candidates. Thus, they were replaced by 2 Madrid stations and London N. Kensington. All other original candidates were retained.
+Exact station candidates were initially chosen by manual analysis of their suitability based on a combination of location, prioritising large cities, and sufficient available historical data. This decision was initially made prior to ingestion. After analysing the files, it was determined that Milan's 2 stations, London Westminster, and Athens Lykovrisi were lacking the required data to make them viable candidates. Thus, they were replaced by 2 Madrid stations, London N. Kensington, and Athens Aristotelous. All other original candidates were retained.
 
 Every collection run (each run of upload_raw_data.py) records:
 
@@ -798,7 +798,7 @@ Monitoring stations may have:
 - provisional observations;
 - revised observations.
 
-Some obvious patterns have already been identified by an initial analysis of the data. This is why the initial proposals of 2 Milan stations and London Westminster were rejected and replaced with 2 Madrid stations and London N. Kensington. These observations will be analysed and scrutinised more thoroughly during M2.
+Some obvious patterns have already been identified by an initial analysis of the data. This is why the initial proposals of 2 Milan stations, London Westminster, and Athens Lykovrisi were rejected and replaced with 2 Madrid stations, London N. Kensington, and Athens Aristotelous. These observations will be analysed and scrutinised more thoroughly during M2.
 
 An initial target of approximately 75% valid PM2.5 coverage per year will be used as a data-quality criterion. This is a predefined quality target rather than a result of the model evaluation.
 
@@ -1070,17 +1070,16 @@ Derry, London and Paris are held out to investigate geographical generalisation.
 The following decisions are intentionally left open until the actual data has been analysed:
 
 1. Is the initial rule of at least 2 of 3 valid hours appropriate?
-2. How should valid hours be handled?
 2. Which rolling-window lengths are most appropriate?
 3. How much missing data can be tolerated?
-5. How should negative readings be treated?
-6. How should stations with no 2025 data be handled in evaluation?
-7. Should station ID/city be used as model features or retained only as metadata?
-8. What historical sequence length should be supplied to the PyTorch model (if we choose to go ahead with PyTorch)?
-9. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
-10. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
-11. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
-12. Should time of day use time_block or a continuous local hour?
+4. How should negative readings be treated?
+5. How should stations with no 2025 data be handled in evaluation?
+6. Should station ID/city be used as model features or retained only as metadata?
+7. What historical sequence length should be supplied to the PyTorch model (if we choose to go ahead with PyTorch)?
+8. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
+9. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
+10. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
+11. Should time of day use time_block or a continuous local hour?
 
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
 
