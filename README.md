@@ -150,44 +150,47 @@ The raw data sources are:
  
 `src/upload_raw_data.py` is the script that moves the downloaded raw files into storage. It mirrors the local `raw_data/` folder into `gs://<project-bucket>/raw/` without changing the files.
  
-- It creates the bucket first if it does not exist (location `EU`, uniform bucket-level access, object versioning on).
+- It creates the bucket first if it does not exist (location `EU`, uniform bucket-level access, object versioning on). If the bucket already exists with versioning off, versioning is switched on.
 - For every local file it computes a SHA-256 checksum *before* uploading and compares it with the raw manifest (`manifests/raw_files.jsonl`). A file already in the bucket with the same checksum is skipped, a new file is uploaded, and a file whose content has changed is uploaded again as an update (the earlier copy is kept by bucket versioning).
 - Every uploaded file adds one line to the manifest (fields in Section 4).
 - At the end it compares the number of local files with the number of objects under `raw/` and warns if they differ.
+
 ```python
 # src/upload_raw_data.py
 def upload_local_tree(client, bucket_name: str, local_root: Path) -> None:
+    """Upload every new or changed file under local_root and append their records to the manifest."""
     bucket = client.bucket(bucket_name)
+    # known_checksums: {gs:// path: checksum} from earlier runs; manifest: all earlier records
     known_checksums, manifest = load_existing_manifest(bucket)
-    existing_objects = {b.name for b in client.list_blobs(bucket_name, prefix="raw/")}
+    existing_objects = {b.name for b in client.list_blobs(bucket_name, prefix="raw/")}   # what is in the bucket now
     new_records, uploaded, updated, skipped = [], 0, 0, 0
-    commit = git_commit()
+    commit = git_commit()   # the same code version is recorded for every file of this run
  
-    for local_path in sorted(local_root.rglob("*")):
+    for local_path in sorted(local_root.rglob("*")):   # every file under raw_data/, in a fixed order
         if local_path.is_dir() or local_path.name in SKIP_NAMES:
             continue
-        relative = local_path.relative_to(local_root).as_posix()
+        relative = local_path.relative_to(local_root).as_posix()   # path below raw_data/, with forward slashes
         gcs_path = f"raw/{relative}"
         gcs_url = f"gs://{bucket_name}/{gcs_path}"
-        checksum = sha256_of_file(local_path)
+        checksum = sha256_of_file(local_path)   # computed BEFORE uploading, from the exact file being sent
  
-        previous = known_checksums.get(gcs_url)
+        previous = known_checksums.get(gcs_url)   # checksum recorded when this file was last uploaded (None = new)
         if previous == checksum and gcs_path in existing_objects:
-            skipped += 1
+            skipped += 1   # unchanged AND still in the bucket: nothing to do
             continue
-        if previous is not None and previous != checksum:
+        if previous is not None and previous != checksum:   # same path, different content: a revised file
             print(f"Checksum changed for {relative} - uploading the updated version.")
             updated += 1
         else:
             uploaded += 1
  
         record = upload_file(bucket, local_path, gcs_path, checksum, commit)
-        record["source"] = relative.split("/")[0]
+        record["source"] = relative.split("/")[0]   # first folder = the data source: epa, uk_air or eea
         new_records.append(record)
  
     print(f"\n{uploaded} new, {updated} updated, {skipped} unchanged (skipped).")
     if new_records:
-        manifest.extend(new_records)
+        manifest.extend(new_records)   # the manifest is rewritten whole: all earlier lines plus this run's
         bucket.blob(MANIFEST_BLOB).upload_from_string("\n".join(json.dumps(r) for r in manifest) + "\n")
         print(f"Manifest updated: {len(manifest)} total entries.")
 ```
@@ -260,19 +263,23 @@ SPLIT_TO_FOLDER = {
 }
  
 # excerpt from main()
-outputs = []
+outputs = []   # one record per uploaded file; becomes the "outputs" list in the manifest
  
+# 1. canonical hourly table   2. 3-hour table   (uploaded as they are; only the row count is read)
 outputs.append(upload_file(bucket, CANONICAL_PATH, "processed/canonical/canonical_hourly.parquet",
                            rows=len(pd.read_parquet(CANONICAL_PATH, columns=["station_id"]))))
 outputs.append(upload_file(bucket, THREE_HOUR_PATH, "processed/three_hour/three_hour_aggregated.parquet",
                            rows=len(pd.read_parquet(THREE_HOUR_PATH, columns=["station_id"]))))
+# 3. the full feature table (every row, including excluded ones)
 outputs.append(upload_dataframe(bucket, features, "processed/features/pm25_features.parquet"))
+# 4. one file per split
 for split_name, gcs_path in SPLIT_TO_FOLDER.items():
     subset = features[features["split"] == split_name]
     if subset.empty:
         print(f"No rows for split '{split_name}' - skipping upload.")
         continue
     outputs.append(upload_dataframe(bucket, subset, gcs_path))
+# 5. the station table that produced this dataset
 outputs.append(upload_file(bucket, REFERENCE_PATH, "metadata/station_reference.csv"))
 ```
 
@@ -375,10 +382,11 @@ Each raw-file manifest entry will contain information such as:
 | **git_commit** | `config.py` |
 
 These fields are written automatically by `upload_file()` in `upload_raw_data.py`, one JSON line per uploaded file (nothing is typed in by hand). `pipeline_version` and `git_commit` come from `config.py`, which reads the current commit hash and adds `-dirty` if tracked files have uncommitted changes.
- 
+
 ```python
 # src/upload_raw_data.py
 def upload_file(bucket, local_path: Path, gcs_path: str, checksum: str, commit: str = "unknown") -> dict:
+    """Upload one file and return its manifest record (the dict that becomes one JSON line)."""
     bucket.blob(gcs_path).upload_from_filename(str(local_path))
     print(f"Uploaded {local_path} -> gs://{bucket.name}/{gcs_path}")
     return {
@@ -399,13 +407,16 @@ def git_commit() -> str:
     """Hash of the code that is running, for the manifests. Gets a "-dirty" suffix
     if tracked files have uncommitted changes, and "unknown" outside a git repo."""
     try:
+        # "git rev-parse HEAD" prints the hash of the current commit
         sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
         if sha.returncode != 0 or not sha.stdout.strip():
-            return "unknown"
+            return "unknown"   # not a git repository
+        # "status --porcelain" lists modified tracked files; untracked files are ignored,
+        # so only uncommitted edits to committed files make the run "dirty"
         changed = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO_ROOT,
                                  capture_output=True, text=True, timeout=10).stdout.strip()
         return sha.stdout.strip() + ("-dirty" if changed else "")
-    except Exception:
+    except Exception:   # git missing or timed out: never let this stop a pipeline run
         return "unknown"
 ```
 
@@ -427,7 +438,7 @@ manifests/dataset_versions.jsonl, linking the processed dataset to the exact raw
 | created_timestamp_utc | Time of the run |
 
 This record is built at the end of `main()` in `store_preprocessed_data.py`. `raw_data_version` is a fingerprint of the raw manifest, so two dataset runs with the same value used exactly the same raw files.
- 
+
 ```python
 # src/store_preprocessed_data.py
 def raw_data_version(bucket):
@@ -522,6 +533,8 @@ PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "your-gcp-project-id")
 BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "your-unique-bucket-name")
  
 def get_client() -> storage.Client:
+    """Storage client for the configured project. Credentials come from Application Default
+    Credentials (see the module docstring), never from the code."""
     return storage.Client(project=PROJECT_ID)
 ```
 
@@ -599,7 +612,7 @@ A random train/test split is inappropriate because it could allow future observa
 
 ```text
 2018 ─────────────── 2023 | 2024 | 2025 | 2026
-        TRAIN             DEV     TEST    UPDATE
+          TRAIN             DEV    TEST   UPDATE
 ```
 Note: Train split is 2022-2023 for Irish stations.
 
@@ -727,7 +740,8 @@ Learned preprocessing, such as feature scaling, imputation parameters, normalisa
 - **Time:** the calendar year of a row decides its period (2024 = dev, 2025 = test, 2026 = future_update). Training starts in each station's first available year, taken from `availability_start` in `metadata/station_reference.csv` (never before 2018), which is how the Irish stations start in 2022 without a special rule.
 - **Boundaries:** a row is only labelled if its input block and its target block (six hours later) fall in the same period. A row whose input is in late December 2023 but whose target is in January 2024 is `excluded`, so no training label comes from the development year. New Year inside the training period is not a boundary.
 - **Place:** stations in `HELD_OUT_STATIONS` never enter train, dev or test. Their 2025 rows become `held_out_test` and all their other rows are `excluded`.
-- **Safety checks:** the script stops if a held-out code is not in `station_reference.csv` (a typo) or if any held-out row ends up in train, dev or test.
+- **Safety checks:** the script stops if a held-out code is not in `station_reference.csv` (a typo), if a held-out station is missing from the feature table or has no 2025 rows, or if any held-out row ends up in train, dev or test.
+
 ```python
 # src/create_splits.py
 HELD_OUT_STATIONS = {
@@ -740,25 +754,30 @@ HELD_OUT_STATIONS = {
  
 def period_of(year: pd.Series, train_start_year: pd.Series) -> pd.Series:
     """Which period a calendar year belongs to, for a given station."""
+    # np.select takes the FIRST condition that is true: 2026+ is "future", then 2025 "test", then 2024 "dev";
+    # any earlier year from the station's own start year onwards is "train"; older years are "before_study"
     return pd.Series(np.select(
         [year >= FUTURE_UPDATE_START_YEAR, year == TEST_YEAR, year == DEV_YEAR, year >= train_start_year],
         ["future", "test", "dev", "train"], default="before_study"), index=year.index)
  
 def assign_splits(df: pd.DataFrame, train_start_year: pd.Series) -> pd.Series:
-    in_period = period_of(df["block_start_utc"].dt.year, train_start_year)
-    target_period = period_of(df["target_block_start_utc"].dt.year, train_start_year)
+    """Return the split label of every row (the rules are in the module docstring)."""
+    in_period = period_of(df["block_start_utc"].dt.year, train_start_year)           # period of the input block
+    target_period = period_of(df["target_block_start_utc"].dt.year, train_start_year)  # period of the block predicted
     same_period = in_period == target_period  # False only for rows straddling a split boundary
     is_held_out = df["station_id"].isin(HELD_OUT_STATIONS)
  
+    # np.select takes the FIRST condition that is true, so the ORDER below matters.
     conditions = [
-        same_period & (in_period == "future"),
-        same_period & is_held_out & (in_period == "test"),
-        is_held_out,
+        same_period & (in_period == "future"),                  # 2026 rows: kept for the update demo
+        same_period & is_held_out & (in_period == "test"),      # an unseen city's 2025 rows: the unseen-city test
+        is_held_out,                                            # every other row of an unseen city: unused
         same_period & (in_period == "test"),
         same_period & (in_period == "dev"),
         same_period & (in_period == "train"),
     ]
     choices = ["future_update", "held_out_test", "excluded", "test", "dev", "train"]
+    # a row matching nothing (before the study, or input and target in different periods) is "excluded"
     return pd.Series(np.select(conditions, choices, default="excluded"), index=df.index)
 ```
 
@@ -819,36 +838,43 @@ TARGET_HORIZON_BLOCKS = 2   # 2 x 3h = 6h ahead
 def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     """time_block / day_of_week / month / season from each station's LOCAL time."""
     parts = []
-    for tz_name, group in df.groupby("timezone"):
+    for tz_name, group in df.groupby("timezone"):   # one timezone at a time (each station has its own local time)
         g = group.copy()
         # drop tz info after converting: mixing several tz-aware zones in one
         # column would collapse it to dtype 'object' and break .dt below
         g["local_timestamp"] = g["block_start_utc"].dt.tz_convert(tz_name).dt.tz_localize(None)
         parts.append(g)
-    df = pd.concat(parts).sort_index()
+    df = pd.concat(parts).sort_index()   # join the per-timezone pieces back together
  
-    df["time_block"] = df["local_timestamp"].dt.hour // 3
-    df["day_of_week"] = df["local_timestamp"].dt.dayofweek
-    df["month"] = df["local_timestamp"].dt.month
+    df["time_block"] = df["local_timestamp"].dt.hour // 3   # 0 = 00:00-02:59 local ... 7 = 21:00-23:59
+    df["day_of_week"] = df["local_timestamp"].dt.dayofweek  # 0 = Monday ... 6 = Sunday
+    df["month"] = df["local_timestamp"].dt.month            # 1-12
+    # meteorological seasons: Dec-Feb winter, Mar-May spring, Jun-Aug summer, Sep-Nov autumn
     season_map = {12: "winter", 1: "winter", 2: "winter", 3: "spring", 4: "spring", 5: "spring",
                   6: "summer", 7: "summer", 8: "summer", 9: "autumn", 10: "autumn", 11: "autumn"}
     df["season"] = df["month"].map(season_map)
     return df
  
 def add_lag_rolling_and_target(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.sort_values(["station_id", "block_start_utc"])
-    df["pm25_current"] = df["pm25_3h_mean"]
+    """Add, per station: the current block, 3 lags, a 24-hour rolling mean and std, and the target.
+ 
+    Relies on the gap-free grid from ensure_full_grid(), so a shift of N rows is exactly N blocks.
+    """
+    df = df.sort_values(["station_id", "block_start_utc"])   # time order within each station
+    df["pm25_current"] = df["pm25_3h_mean"]   # the block that has just finished: known when the forecast is made
+    # each station's own series, so a lag never reaches from one station into another
     grouped = df.groupby("station_id")["pm25_3h_mean"]
  
     for k in (1, 2, 3):
-        df[f"pm25_lag_{k}"] = grouped.shift(k)
+        df[f"pm25_lag_{k}"] = grouped.shift(k)   # the value k blocks (3k hours) earlier
+    # mean / std of the last 8 blocks including this one; min_periods=8 gives NaN unless all 8 blocks have a value
     df["pm25_rolling_mean"] = grouped.transform(
         lambda s: s.rolling(ROLLING_WINDOW_BLOCKS, min_periods=ROLLING_WINDOW_BLOCKS).mean())
     df["pm25_rolling_std"] = grouped.transform(
         lambda s: s.rolling(ROLLING_WINDOW_BLOCKS, min_periods=ROLLING_WINDOW_BLOCKS).std())
  
     # the grid is gap-free, so shifting by N rows is exactly N blocks
-    df["target_pm25"] = grouped.shift(-TARGET_HORIZON_BLOCKS)
+    df["target_pm25"] = grouped.shift(-TARGET_HORIZON_BLOCKS)   # the value 2 blocks (6 h) LATER: what the model predicts
     df["target_block_start_utc"] = df["block_start_utc"] + pd.Timedelta(hours=3 * TARGET_HORIZON_BLOCKS)
     return df
 ```
@@ -1012,10 +1038,10 @@ Step 1 (downloading) is currently manual (Section 5); the download scripts are s
 | Order | Script | What it does | Why it is included |
 |---|---|---|---|
 | 1 | `upload_raw_data.py` | Uploads the raw files to GCS and records the raw manifest | **Required: moves the raw data into storage** (Section 1) |
-| 2 | `canonicalize_raw_data.py` | Parses the EPA, UK-AIR and EEA files into one hourly table keyed by `station_id` with UTC timestamps | Extra, but the splits and stored datasets are built from its output, and it holds the timestamp and quality rules (this section) |
-| 3 | `validate_data_quality.py` | Writes completeness, duplicate and value-sanity reports | Extra: data-quality checks, kept and documented as part of the work done (Missing observations) |
-| 4 | `aggregate_to_3hour.py` | Hourly to 3-hour mean blocks | Extra: the target and features are defined on these blocks (Aggregation) |
-| 5 | `feature_extraction.py` | Lag, rolling and temporal features and the 6-hour-ahead target | Optional step, included because the splits label its output (Section 7) |
+| 2 | `canonicalize_raw_data.py` | Parses the EPA, UK-AIR and EEA files into one hourly table keyed by `station_id` with UTC timestamps | The splits and stored datasets are built from its output, and it holds the timestamp and quality rules (this section) |
+| 3 | `validate_data_quality.py` | Writes completeness, duplicate and value-sanity reports | Data-quality checks, kept and documented as part of the work done (Missing observations) |
+| 4 | `aggregate_to_3hour.py` | Hourly to 3-hour mean blocks | The target and features are defined on these blocks (Aggregation) |
+| 5 | `feature_extraction.py` | Lag, rolling and temporal features and the 6-hour-ahead target | The splits label its output (Section 7) |
 | 6 | `create_splits.py` | Labels each row train / dev / test / held-out / future | **Required: train/dev/test split** (Section 6) |
 | 7 | `store_preprocessed_data.py` | Writes all processed stages to GCS and the dataset manifest | **Required: stores the preprocessed data** (Section 2) |
  
@@ -1077,10 +1103,11 @@ for source, grp in folders.groupby("source"):
 def station_for_folder(file_path: Path, source_dir: Path, folders: "pd.Series"):
     """Which station's raw_folder contains this file? (None if none does.)
     `folders` maps station_id -> raw_folder (relative to source_dir, '/' separated)."""
-    rel = file_path.relative_to(source_dir).parent.as_posix()
-    rel = "" if rel == "." else rel
+    rel = file_path.relative_to(source_dir).parent.as_posix()   # the file's folder, relative to raw_data/<source>/
+    rel = "" if rel == "." else rel                             # a file directly in the source folder has no sub-folder
+    # a file belongs to a station if its folder IS that station's raw_folder or sits inside it
     hits = [sid for sid, folder in folders.items() if rel == folder or rel.startswith(folder + "/")]
-    return hits[0] if len(hits) == 1 else None
+    return hits[0] if len(hits) == 1 else None   # exactly one match, otherwise the caller reports the file
 ```
 
 ---
@@ -1093,7 +1120,7 @@ Time-zone handling will be explicitly recorded because the project uses measurem
 Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly.
 
 In `canonicalize_raw_data.py` every source is converted to the same convention: hourly timestamps in UTC, labelled by the start of the hour. UK-AIR and EPA files are labelled by the end of the hour and EEA hourly files are labelled in UTC+1, so one hour is subtracted in each case. UK-AIR writes the last hour of each day as `24:00`, which is handled by adding the clock time to the date as a duration.
- 
+
 ```python
 # src/canonicalize_raw_data.py
 # Timestamp conventions. A row stamped 09:00 under "hour ending" covers
@@ -1159,25 +1186,31 @@ if "validity" in col:
  
 ```python
 # src/validate_data_quality.py
-COMPLETENESS_THRESHOLD = 0.75
+COMPLETENESS_THRESHOLD = 0.75   # a station-year with a smaller share of valid hours is flagged (not removed)
  
 def check_completeness(df: pd.DataFrame, stations: pd.DataFrame) -> pd.DataFrame:
-    df = df.drop_duplicates(["station_id", "timestamp_utc"], keep="first")
+    """Share of hourly values that are valid, for every station and year it should have data.
+ 
+    How many hours to EXPECT comes from availability_start in station_reference.csv, never
+    from the data itself. Years below COMPLETENESS_THRESHOLD are flagged, not removed.
+    """
+    df = df.drop_duplicates(["station_id", "timestamp_utc"], keep="first")   # a repeated hour must not count twice
     rows = []
     for _, st in stations.iterrows():
-        avail_start = max(STUDY_START, pd.Timestamp(st["availability_start"], tz="UTC"))
-        s_df = df[df["station_id"] == st["station_id"]]
+        avail_start = max(STUDY_START, pd.Timestamp(st["availability_start"], tz="UTC"))   # first hour we expect data
+        s_df = df[df["station_id"] == st["station_id"]]   # this station's rows only
         for year in range(avail_start.year, STUDY_END.year + 1):
+            # the part of this year inside the expected period (shorter for the first and last year)
             win_start = max(avail_start, pd.Timestamp(f"{year}-01-01 00:00", tz="UTC"))
             win_end = min(STUDY_END, pd.Timestamp(f"{year}-12-31 23:00", tz="UTC"))
-            expected = int((win_end - win_start).total_seconds() // 3600) + 1
+            expected = int((win_end - win_start).total_seconds() // 3600) + 1   # hourly values that window should hold
             in_win = s_df[(s_df["timestamp_utc"] >= win_start) & (s_df["timestamp_utc"] <= win_end)]
-            valid = int(in_win["pm25"].notna().sum())
+            valid = int(in_win["pm25"].notna().sum())   # hours that actually have a PM2.5 value
             rows.append({"station_id": st["station_id"], "station_name": st["station_name"], "year": year,
                          "expected_from": win_start.date(), "valid_hours": valid, "expected_hours": expected,
                          "completeness_pct": round(100 * valid / expected, 1),
                          "passes_threshold": valid / expected >= COMPLETENESS_THRESHOLD})
-    report = pd.DataFrame(rows)
+    report = pd.DataFrame(rows)   # one row per station-year
     failing = report[~report["passes_threshold"]]
     if failing.empty:
         print(f"All expected station-years reach {COMPLETENESS_THRESHOLD:.0%} completeness.")
@@ -1206,21 +1239,28 @@ The aggregation rule defines:
 The project will not silently fill missing target observations.
 
 Implemented in `aggregate_to_3hour.py`: blocks are fixed 3-hour windows on the UTC clock, and a block's mean is kept only if at least 2 of its 3 hours are valid. The number of valid hours is stored in `valid_hours`. This script is included because the target and all features are defined on these blocks.
- 
+
 ```python
 # src/aggregate_to_3hour.py
 MIN_VALID_HOURS = 2  # out of 3, per block
  
 def aggregate_station(group: pd.DataFrame) -> pd.DataFrame:
-    group = group.set_index("timestamp_utc").sort_index()
-    if group.index.has_duplicates:
+    """Turn ONE station's hourly series into 3-hour mean blocks.
+ 
+    Blocks are fixed UTC windows (00:00-03:00, 03:00-06:00, ...). A block's mean
+    is kept only if at least MIN_VALID_HOURS of its 3 hours have a value.
+    """
+    group = group.set_index("timestamp_utc").sort_index()   # time-indexed, so resample() can cut it into windows
+    if group.index.has_duplicates:   # the same hour twice means canonicalize_raw_data.py left a duplicate
         raise SystemExit("Duplicate hours found in the canonical file - re-run canonicalize_raw_data.py, "
                          "which is responsible for resolving them.")
-    resampled = group["pm25"].resample("3h")
+    resampled = group["pm25"].resample("3h")   # fixed 3-hour windows, each labelled by its START time
+    # mean() ignores missing hours; count() is how many hours in the window have a value (0-3)
     block_mean, valid_hours = resampled.mean(), resampled.count()
     out = pd.DataFrame({"block_start_utc": block_mean.index,
                         "pm25_3h_mean": block_mean.values,
                         "valid_hours": valid_hours.values})
+    # too few valid hours: the block gets no mean (missing values are never filled in)
     out.loc[out["valid_hours"] < MIN_VALID_HOURS, "pm25_3h_mean"] = float("nan")
     return out
 ```
@@ -1381,23 +1421,23 @@ Because the project uses official environmental monitoring data, personal-data r
 The project follows the lecture's general AI data architecture:
 
 ```text
-EPA / EEA / UK-AIR
+ EPA / EEA / UK-AIR
         ↓
-   Raw data sources
+  Raw data sources
         ↓
-     GCS / Data Lake
+  GCS / Data Lake
         ↓
-    Batch ingestion
+  Batch ingestion
         ↓
-  Canonical processing
+Canonical processing
         ↓
-       Parquet
+     Parquet
         ↓
-┌────────────────────────────┐
-│ Analytical layer           │
-│ pandas / Parquet           │
-│ BigQuery (optional)        │
-└────────────────────────────┘
+┌──────────────────────┐
+│ Analytical layer     │
+│ pandas / Parquet     │
+│ BigQuery (optional)  │
+└──────────────────────┘
         ↓
  Feature / sequence construction
         ↓
@@ -1408,9 +1448,9 @@ EPA / EEA / UK-AIR
         ↓
       Model
         ↓
-   Docker / FastAPI
+ Docker / FastAPI
         ↓
-     Cloud Run
+    Cloud Run
 ```
 
 The architecture deliberately uses different technologies for different workloads rather than treating one database or storage system as the solution to every problem.
