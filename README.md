@@ -87,19 +87,13 @@ gs://<project-bucket>/
 │
 ├── processed/
 │   ├── canonical/
-│   │   └── measurements/
-│   │       ├── year=2022/
-│   │       ├── year=2023/
-│   │       └── ...
+│   │   └── canonical_hourly.parquet
 │   │
 │   ├── three_hour/
-│   │   ├── year=2022/
-│   │   ├── year=2023/
-│   │   └── ...
+│   │   └── three_hour_aggregated.parquet
 │   │
 │   ├── features/
-│   │   ├── year=2022/
-│   │   └── ...
+│   │   └── pm25_features.parquet
 │   │
 │   └── splits/
 │       ├── train/
@@ -108,13 +102,11 @@ gs://<project-bucket>/
 │
 ├── manifests/
 │   ├── raw_files.jsonl
-│   ├── dataset_versions.jsonl
-│   └── processing_runs.jsonl
+│   └── dataset_versions.jsonl
 │
 ├── metadata/
-│   ├── stations.parquet
-│   ├── source_metadata/
-│   └── data_dictionary.json
+│   ├── station_reference.csv
+│   └── source_metadata/
 │
 └── models/
     ├── linear_regression/
@@ -286,18 +278,15 @@ Therefore, dataset versioning will be explicit.
 
 Each raw-file manifest entry will contain information such as:
 
-```text
-source
-source_url
-period
-filename
-gcs_path
-download_timestamp
-sha256
-pipeline_version
-validation_status
-source_timezone
-```
+| **Field** | **Source** |
+| local_path | the file's path on your machine |
+| gcs_path | raw/ plus the path under raw_data/ |
+|checksum_sha256 | hash of the file contents, computed before upload |
+|size_bytes | file size |
+|file_modified_utc | the file's last-modified time |
+|upload_timestamp_utc | time of upload |
+| source | first folder: epa, uk_air or eea |
+|pipeline_version, git_commit |config.py |
 
 A processed dataset will additionally be associated with:
 
@@ -394,9 +383,9 @@ Note: You can find all relevant metadata for each station by clicking on the sta
 5. Select Download format Parquet and select Download under Download Actions
 6. Unzip downloaded files
 
-Note: EEA hourly files are converted to UTC+1 for every country while daily files are not. EPA and UK-AIR need no time-zone conversion, but both are hour-ending, and the pipeline shifts them back one hour. This is explicitly stated in the EEA and UKAir documentation, whereas it is simply inferred from an anlysis of the data in the case of EPA data.
+Note: EEA hourly files are converted to UTC+1 for every country while daily files are not. EPA and UK-AIR need no time-zone conversion, but both are hour-ending, and the pipeline shifts them back one hour. This is explicitly stated in the EEA and UKAir documentation, whereas it is simply inferred from an analysis of the data in the case of EPA data.
 
-The Parquet data can be confusing to read as the station and city names are not mentioned. Instead their station ids are used. I have given each station's EEA id under section 9 Reproducibility of Data Collection. For any new cities or stations added you will need to figure out the station id yourself. You can find the full metadata in the station_reference.csv file.
+The Parquet files contain no station names, only a sampling-point code. For Denmark, France and Greece it contains the EU id (SPO-DK0034A_06001_104 is Copenhagen, DK0034A). The Spanish files use Spain's national code instead (SP_28079038_9_47 is Cuatro Caminos, ES1525A). Section 9 lists both codes.  For any new cities or stations added you will need to figure out the station id yourself. The full mapping is in metadata/station_reference.csv (columns station_id and source_download_id).
 
 You can find the full EEA metadata and filter by country here https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements to find its unique id under EoI code and Nat code. This metadata also displays latitude/longitude and other relevant info and can be downloaded into CSV files. 
 Even for station data downloaded from UKAir and EPA Ireland, it is recommended to download the EEA metadata CSV for the relevant country to get a consistent EU station id for each station, as well as other important metadata. This is due to its metadata generally being more complete and clear than EPA Ireland/AirQuality.ie in particular.
@@ -555,12 +544,13 @@ The initial candidate feature set is:
 
 | **Variable** | **Definition** | **Type / Notes** |
 |---|---|---|
-| `pm25_lag_1` | Most recent completed 3-hour mean PM2.5 | Continuous, µg/m³ |
-| `pm25_lag_2` | PM2.5 two 3-hour blocks previously | Continuous, µg/m³ |
-| `pm25_lag_3` | PM2.5 three 3-hour blocks previously | Continuous, µg/m³ |
+| `pm25_current` | Mean PM2.5 of the input block, the 3-hour block that has just completed when the forecast is made | Continuous, µg/m³
+| `pm25_lag_1` | Mean PM2.5 of the block immediately before the input block | Continuous, µg/m³
+| `pm25_lag_2` | Mean PM2.5 two blocks before the input block | Continuous, µg/m³
+| `pm25_lag_3` | Mean PM2.5 three blocks before the input block | Continuous, µg/m³
 | `pm25_rolling_mean` | Recent historical mean PM2.5 | Continuous; historical observations only |
 | `pm25_rolling_std` | Recent historical PM2.5 variability | Continuous; historical observations only |
-| `time_block` | 3-hour period within the day | Categorical/integer, 0–7 |
+| `time_block` | 3-hour period within the day, derived from station-local time (time zone in station_reference.csv) | Categorical/integer, 0–7 |
 | `day_of_week` | Day of week | Categorical/integer |
 | `month` | Calendar month | Categorical/integer |
 | `season` | Meteorological season | Categorical |
@@ -647,7 +637,7 @@ Provisional/unvalidated Irish PM2.5 data for:
 
 **2022–2025**
 
-Validated data would have been preferred, however there was only validated daily data for a select few stations in Dublin and Cork. Unvalidated data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2. 
+Validated data would have been preferred, however there was only validated daily data for 5 of the 6 stations from those dates and no hourly data. Unvalidated provisional data was chosen as it is readily available from approximately January 2022 onwards for all selected stations except Briarhill, Co. Galway which begins in December 2022. This choice was simply due to a lack of available verified data. EPA remains the main authority on Air Pollution levels in Ireland. These measurements are treated as provisional/unvalidated and will be subject to additional data-quality checks during M2. 
 
 If it is determined later that the 2022-2023 Training data for Irish stations is not sufficient to accurately train our model, the daily data may be used, though this is unlikely. A more plausible potential use of the daily data could be for validation by comparing it against our four 6-hour estimates.
 
@@ -667,10 +657,10 @@ PM2.5 data for:
 PM2.5 data for:
 
 - Agia Paraskevi, Athens - EEA id: GR0039A
-- Lykovrisi, Athens - EEA id: GR0035A (no valid data between January and August 2021)
-- Copenhagen - EEA id: DK0034A
-- Cuatro Caminos, Madrid - EEA id: ES1525A
-- Escuelas Aguirre, Madrid - EEA id: ES0118A
+- Lykovrisi, Athens - EEA id: GR0035A (no valid data between 10 Dec 2020 and 24 Sept 2021)
+- Copenhagen - EEA id: DK0034A (no hourly data for 2025, could use daily data to test against four 6-hour estimates)
+- Cuatro Caminos, Madrid - EEA id: ES1525A (Parquet code: 28079038)
+- Escuelas Aguirre, Madrid - EEA id: ES0118A (Parquet code: 28079008)
 - Gennevilliers, Paris - EEA id: FR04002
 - Saint-Denis, Paris - EEA id: FR04058
 
@@ -680,13 +670,15 @@ Exact station candidates were initially chosen by manual analysis of their suita
 
 Every collection run records:
 
+- local_path
+- gcs_path;
+- checksum_sha256;
+- size_bytes;
+- file_modified_utc;
+- upload_timestamp_utc;
 - source;
-- requested parameters;
-- original filename;
-- download timestamp;
-- GCS destination;
-- checksum;
-- pipeline version.
+- pipeline version;
+- git_commit;
 
 This means another student can rerun the collection code using the documented configuration and identify exactly which source files were used.
 
@@ -709,7 +701,7 @@ Parse source-specific formats
         ↓
 Standardise column names / units / timestamps
         ↓
-Map source station IDs → canonical station IDs
+Match files to stations
         ↓
 Detect duplicates/conflicting records
         ↓
@@ -736,18 +728,25 @@ Write versioned Parquet datasets
 
 ## Station mapping
 
-Different data providers use different station identifiers. A canonical station mapping will translate each source-specific station ID into a project-specific canonical station ID while retaining the original source and source station ID.
+Every station is keyed on its EU code (station_id) in metadata/station_reference.csv, which records station_name, city, country, timezone, latitude, longitude, source, source_download_id, raw_folder, uk_air_internal_id, source_name_check, availability_start and coordinates_source.
 
 A canonical station mapping will therefore contain:
 
 ```text
 station_id (EU id)
-source
-source_station_id
+station_name
 city
 country
+timezone
 latitude
 longitude
+source
+source_download_id
+raw_folder
+uk_air_internal_id
+source_name_check
+availability_start
+coordinates_source
 ```
 ---
 
@@ -813,7 +812,7 @@ The target variable is therefore:
 
 **`target_pm25` = 3-hour mean PM2.5 concentration in the target block.**
 
-Each day is divided into eight fixed 3-hour blocks, and each input block is used to predict the corresponding block two periods (six hours) later.
+Aggregation blocks are fixed 3-hour windows on the UTC clock, so a target two blocks ahead is always exactly six hours later, even on daylight-saving change days. Times in the examples are therefore UTC. The time_block feature is derived from station-local time: the local hour at the start of the block divided by 3, rounded down, so 0 means local 00:00–02:59 and 7 means 21:00–23:59. A block lines up exactly with its time_block only where local time is a whole multiple of 3 hours from UTC (Ireland and the UK in winter, Athens in summer). Elsewhere, such as Paris in winter, the UTC block 09:00–11:59 is 10:00–12:59 local and takes the label of the bin containing its start.
 
 The time_block feature is 0-7 arranged thus:
 
@@ -841,10 +840,11 @@ Previous blocks                              Input        Target
 
 00:00–02:59   03:00–05:59   06:00–08:59   09:00–11:59   15:00–17:59
      ↓             ↓             ↓             ↓            ↓
-   lag_3         lag_2         lag_1      input block     target
+   lag_3         lag_2         lag_1      pm25_current     target
 ```
 
 The lag features therefore describe recent historical PM2.5 concentrations available before the target period.
+The forecast is issued after the input block has completed, so its mean (pm25_current) is a known input; lag_1 is the block before it.
 
 No measurements from the target block or any later period are used to create the lag features.
 
@@ -911,7 +911,7 @@ This project is expected to exceed that requirement substantially.
 
 The proposed dataset currently consists of 17 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from December 2022 onwards. 6 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
 
-Before accounting for missing observations and data-quality restrictions, this represents approximately 970,000 hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 348,000 3-hour station-time observations. 
+Before accounting for missing observations and data-quality restrictions, this represents approximately 970,000 hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 324,000 3-hour station-time observations. 
 
 The final number of supervised learning samples will be lower after applying completeness requirements, quality checks, feature-history requirements and the 6-hour forecasting horizon. This should provide sufficient temporal and geographical diversity for investigating both forecasting performance and generalisation to unseen cities, while still remaining manageable for CPU-based classical ML and a modest PyTorch sequence model.
 
@@ -932,7 +932,7 @@ The main legal considerations are therefore:
 - not redistributing data where the source terms prohibit it;
 - securing GCS access appropriately.
 
-Because the project uses official environmental monitoring data, personal-data risks are expected to be substantially lower than for datasets containing individuals. The source licence and reuse terms has been checked before final publication or redistribution.
+Because the project uses official environmental monitoring data, personal-data risks are expected to be substantially lower than for datasets containing individuals. The source licence and reuse terms have been checked before final publication or redistribution.
 
 ---
 
@@ -1050,6 +1050,7 @@ The following decisions are intentionally left open until the actual data has be
 7. Which XGBoost hyperparameters provide the best development-set performance without overfitting?
 8. Does XGBoost outperform Linear Regression sufficiently to justify its additional complexity?
 9. Does the PyTorch sequence model provide additional predictive value beyond XGBoost (if we choose to go ahead with PyTorch)?
+10. Should time of day use time_block or a continuous local hour?
 
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
 
