@@ -281,18 +281,17 @@ Therefore, dataset versioning will be explicit.
 
 Each raw-file manifest entry will contain information such as:
 
-
-| Field | Source | Description |
-| :--- | :--- | :--- |
-| **local_path** | - | The file's path on your machine |
-| **gcs_path** | - | `raw/` plus the path under `raw_data/` |
-| **checksum_sha256** | - | Hash of the file contents, computed before upload |
-| **size_bytes** | - | File size |
-| **file_modified_utc** | - | The file's last-modified time |
-| **upload_timestamp_utc** | - | Time of upload |
-| **source** | - | First folder: `epa`, `uk_air`, or `eea` |
-| **pipeline_version** | `config.py` | - |
-| **git_commit** | `config.py` | - |
+| Field | Source |
+| :--- | :--- |
+| **local_path** | The file's path on your machine |
+| **gcs_path** | `raw/` plus the path under `raw_data/` |
+| **checksum_sha256** | Hash of the file contents, computed before upload |
+| **size_bytes** | File size |
+| **file_modified_utc** | The file's last-modified time |
+| **upload_timestamp_utc** | Time of upload |
+| **source** | First folder: `epa`, `uk_air`, or `eea` |
+| **pipeline_version** | `config.py` |
+| **git_commit** | `config.py` |
 
 A processed dataset will additionally be associated with:
 
