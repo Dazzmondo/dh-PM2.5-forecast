@@ -146,6 +146,52 @@ The raw data sources are:
 - **Environmental Protection Agency Ireland (EPA) / AirQuality.ie** current/provisional air-quality measurements
 - **UK-AIR** automatic monitoring data
 
+### Raw data upload code (`upload_raw_data.py`)
+ 
+`src/upload_raw_data.py` is the script that moves the downloaded raw files into storage. It mirrors the local `raw_data/` folder into `gs://<project-bucket>/raw/` without changing the files.
+ 
+- It creates the bucket first if it does not exist (location `EU`, uniform bucket-level access, object versioning on).
+- For every local file it computes a SHA-256 checksum *before* uploading and compares it with the raw manifest (`manifests/raw_files.jsonl`). A file already in the bucket with the same checksum is skipped, a new file is uploaded, and a file whose content has changed is uploaded again as an update (the earlier copy is kept by bucket versioning).
+- Every uploaded file adds one line to the manifest (fields in Section 4).
+- At the end it compares the number of local files with the number of objects under `raw/` and warns if they differ.
+```python
+# src/upload_raw_data.py
+def upload_local_tree(client, bucket_name: str, local_root: Path) -> None:
+    bucket = client.bucket(bucket_name)
+    known_checksums, manifest = load_existing_manifest(bucket)
+    existing_objects = {b.name for b in client.list_blobs(bucket_name, prefix="raw/")}
+    new_records, uploaded, updated, skipped = [], 0, 0, 0
+    commit = git_commit()
+ 
+    for local_path in sorted(local_root.rglob("*")):
+        if local_path.is_dir() or local_path.name in SKIP_NAMES:
+            continue
+        relative = local_path.relative_to(local_root).as_posix()
+        gcs_path = f"raw/{relative}"
+        gcs_url = f"gs://{bucket_name}/{gcs_path}"
+        checksum = sha256_of_file(local_path)
+ 
+        previous = known_checksums.get(gcs_url)
+        if previous == checksum and gcs_path in existing_objects:
+            skipped += 1
+            continue
+        if previous is not None and previous != checksum:
+            print(f"Checksum changed for {relative} - uploading the updated version.")
+            updated += 1
+        else:
+            uploaded += 1
+ 
+        record = upload_file(bucket, local_path, gcs_path, checksum, commit)
+        record["source"] = relative.split("/")[0]
+        new_records.append(record)
+ 
+    print(f"\n{uploaded} new, {updated} updated, {skipped} unchanged (skipped).")
+    if new_records:
+        manifest.extend(new_records)
+        bucket.blob(MANIFEST_BLOB).upload_from_string("\n".join(json.dumps(r) for r in manifest) + "\n")
+        print(f"Manifest updated: {len(manifest)} total entries.")
+```
+
 ---
 
 # 2. Processed Data Storage and File Formats — 1.0 point
@@ -198,6 +244,37 @@ The distinction between **data type and storage format** is important:
 - These data types can be represented using CSV, Parquet, database tables or other formats.
 
 Therefore, the choice of Parquet is a storage/I/O decision rather than a claim that PM2.5 is itself a "Parquet data type."
+
+### Storing the processed data (`store_preprocessed_data.py`)
+ 
+`src/store_preprocessed_data.py` writes every processed stage to GCS as Parquet, following the structure above: the canonical hourly table, the 3-hour table, the full feature table (every row, with its `split` label) and one file per split (train, dev, test, held_out, future_update). Rows labelled `excluded` stay in the full feature file only. It also uploads `metadata/station_reference.csv`, stops with a clear message if an earlier pipeline stage has not been run, and appends one line to `manifests/dataset_versions.jsonl` (Section 4).
+ 
+```python
+# src/store_preprocessed_data.py
+SPLIT_TO_FOLDER = {
+    "train": "processed/splits/train/train.parquet",
+    "dev": "processed/splits/dev/dev.parquet",
+    "test": "processed/splits/test/test.parquet",
+    "held_out_test": "processed/splits/held_out/held_out_test.parquet",
+    "future_update": "processed/splits/future_update/future_update.parquet",
+}
+ 
+# excerpt from main()
+outputs = []
+ 
+outputs.append(upload_file(bucket, CANONICAL_PATH, "processed/canonical/canonical_hourly.parquet",
+                           rows=len(pd.read_parquet(CANONICAL_PATH, columns=["station_id"]))))
+outputs.append(upload_file(bucket, THREE_HOUR_PATH, "processed/three_hour/three_hour_aggregated.parquet",
+                           rows=len(pd.read_parquet(THREE_HOUR_PATH, columns=["station_id"]))))
+outputs.append(upload_dataframe(bucket, features, "processed/features/pm25_features.parquet"))
+for split_name, gcs_path in SPLIT_TO_FOLDER.items():
+    subset = features[features["split"] == split_name]
+    if subset.empty:
+        print(f"No rows for split '{split_name}' - skipping upload.")
+        continue
+    outputs.append(upload_dataframe(bucket, subset, gcs_path))
+outputs.append(upload_file(bucket, REFERENCE_PATH, "metadata/station_reference.csv"))
+```
 
 ---
 
@@ -297,6 +374,41 @@ Each raw-file manifest entry will contain information such as:
 | **pipeline_version** | `config.py` |
 | **git_commit** | `config.py` |
 
+These fields are written automatically by `upload_file()` in `upload_raw_data.py`, one JSON line per uploaded file (nothing is typed in by hand). `pipeline_version` and `git_commit` come from `config.py`, which reads the current commit hash and adds `-dirty` if tracked files have uncommitted changes.
+ 
+```python
+# src/upload_raw_data.py
+def upload_file(bucket, local_path: Path, gcs_path: str, checksum: str, commit: str = "unknown") -> dict:
+    bucket.blob(gcs_path).upload_from_filename(str(local_path))
+    print(f"Uploaded {local_path} -> gs://{bucket.name}/{gcs_path}")
+    return {
+        "local_path": str(local_path),
+        "gcs_path": f"gs://{bucket.name}/{gcs_path}",
+        "checksum_sha256": checksum,
+        "size_bytes": local_path.stat().st_size,
+        "file_modified_utc": datetime.fromtimestamp(local_path.stat().st_mtime, timezone.utc).isoformat(),
+        "upload_timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "pipeline_version": PIPELINE_VERSION,
+        "git_commit": commit,
+    }
+```
+ 
+```python
+# src/config.py
+def git_commit() -> str:
+    """Hash of the code that is running, for the manifests. Gets a "-dirty" suffix
+    if tracked files have uncommitted changes, and "unknown" outside a git repo."""
+    try:
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
+        if sha.returncode != 0 or not sha.stdout.strip():
+            return "unknown"
+        changed = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO_ROOT,
+                                 capture_output=True, text=True, timeout=10).stdout.strip()
+        return sha.stdout.strip() + ("-dirty" if changed else "")
+    except Exception:
+        return "unknown"
+```
+
 Each run of the storage step (store_preprocessed_data.py) appends one line to
 manifests/dataset_versions.jsonl, linking the processed dataset to the exact raw data and code that produced it:
 
@@ -313,6 +425,39 @@ manifests/dataset_versions.jsonl, linking the processed dataset to the exact raw
 | config | Rolling window, target horizon, minimum valid hours, completeness threshold |
 | outputs | Per file written: gcs_path, sha256, size_bytes, rows |
 | created_timestamp_utc | Time of the run |
+
+This record is built at the end of `main()` in `store_preprocessed_data.py`. `raw_data_version` is a fingerprint of the raw manifest, so two dataset runs with the same value used exactly the same raw files.
+ 
+```python
+# src/store_preprocessed_data.py
+def raw_data_version(bucket):
+    """SHA-256 of the raw-file manifest = a fingerprint of exactly which raw files were uploaded."""
+    blob = bucket.blob(RAW_MANIFEST)
+    if not blob.exists():
+        print(f"WARNING: {RAW_MANIFEST} not found - run upload_raw_data.py first; raw_data_version will be null.")
+        return None
+    return hashlib.sha256(blob.download_as_text().encode("utf-8")).hexdigest()
+ 
+# excerpt from main()
+append_manifest_entry(bucket, {
+    "dataset_run_id": now.strftime("%Y%m%dT%H%M%SZ"),
+    "pipeline_version": PIPELINE_VERSION,
+    "preprocessing_version": PREPROCESSING_VERSION,
+    "feature_version": FEATURE_VERSION,
+    "git_commit": git_commit(),
+    "raw_data_version": raw_data_version(bucket),
+    "station_reference_sha256": sha256_of_file(REFERENCE_PATH),
+    "row_counts": {k: int(v) for k, v in features["split"].value_counts().items()},
+    "config": {
+        "rolling_window_blocks": ROLLING_WINDOW_BLOCKS,
+        "target_horizon_blocks": TARGET_HORIZON_BLOCKS,
+        "aggregation_min_valid_hours": MIN_VALID_HOURS,
+        "completeness_threshold": COMPLETENESS_THRESHOLD,
+    },
+    "outputs": outputs,
+    "created_timestamp_utc": now.isoformat(),
+})
+```
 
 This provides a lineage relationship such as:
 
@@ -368,6 +513,17 @@ The ML pipeline will use:
 - `torch` (optional)
 
 GCS access will use Google Cloud authentication through service-account/application-default credentials. Credentials will not be embedded in source code.
+
+In the code, the project ID and bucket name are read from environment variables and the storage client uses Application Default Credentials (for example after `gcloud auth application-default login`), so no credential is stored in the repository. If the variables are not set, the scripts stop with a message (`check_gcp_settings()` in `config.py`) instead of using placeholder values.
+ 
+```python
+# src/upload_raw_data.py (store_preprocessed_data.py uses the same pattern)
+PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "your-gcp-project-id")
+BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "your-unique-bucket-name")
+ 
+def get_client() -> storage.Client:
+    return storage.Client(project=PROJECT_ID)
+```
 
 The project will primarily use **batch processing** for data collection and training-data generation.
 
@@ -564,6 +720,48 @@ Deterministic preprocessing, such as timestamp parsing, unit standardisation, st
 
 Learned preprocessing, such as feature scaling, imputation parameters, normalisation, or dimensionality reduction, must be fitted using the training data only and then applied unchanged to the development and test data.
 
+### Split implementation (`create_splits.py`)
+ 
+`src/create_splits.py` reads the feature table and gives every row a `split` label: `train`, `dev`, `test`, `held_out_test`, `future_update` or `excluded`.
+ 
+- **Time:** the calendar year of a row decides its period (2024 = dev, 2025 = test, 2026 = future_update). Training starts in each station's first available year, taken from `availability_start` in `metadata/station_reference.csv` (never before 2018), which is how the Irish stations start in 2022 without a special rule.
+- **Boundaries:** a row is only labelled if its input block and its target block (six hours later) fall in the same period. A row whose input is in late December 2023 but whose target is in January 2024 is `excluded`, so no training label comes from the development year. New Year inside the training period is not a boundary.
+- **Place:** stations in `HELD_OUT_STATIONS` never enter train, dev or test. Their 2025 rows become `held_out_test` and all their other rows are `excluded`.
+- **Safety checks:** the script stops if a held-out code is not in `station_reference.csv` (a typo) or if any held-out row ends up in train, dev or test.
+```python
+# src/create_splits.py
+HELD_OUT_STATIONS = {
+    "GB1060A",  # Derry Rosemount
+    "GB0566A",  # London Bloomsbury
+    "GB0620A",  # London N. Kensington
+    "FR04002",  # Paris Gennevilliers
+    "FR04058",  # Paris Saint-Denis
+}
+ 
+def period_of(year: pd.Series, train_start_year: pd.Series) -> pd.Series:
+    """Which period a calendar year belongs to, for a given station."""
+    return pd.Series(np.select(
+        [year >= FUTURE_UPDATE_START_YEAR, year == TEST_YEAR, year == DEV_YEAR, year >= train_start_year],
+        ["future", "test", "dev", "train"], default="before_study"), index=year.index)
+ 
+def assign_splits(df: pd.DataFrame, train_start_year: pd.Series) -> pd.Series:
+    in_period = period_of(df["block_start_utc"].dt.year, train_start_year)
+    target_period = period_of(df["target_block_start_utc"].dt.year, train_start_year)
+    same_period = in_period == target_period  # False only for rows straddling a split boundary
+    is_held_out = df["station_id"].isin(HELD_OUT_STATIONS)
+ 
+    conditions = [
+        same_period & (in_period == "future"),
+        same_period & is_held_out & (in_period == "test"),
+        is_held_out,
+        same_period & (in_period == "test"),
+        same_period & (in_period == "dev"),
+        same_period & (in_period == "train"),
+    ]
+    choices = ["future_update", "held_out_test", "excluded", "test", "dev", "train"]
+    return pd.Series(np.select(conditions, choices, default="excluded"), index=df.index)
+```
+
 ---
 
 # 7. Feature Description — 1.0 point
@@ -603,6 +801,57 @@ Because unseen-city generalisation is a core research question, station and city
 The final M2 analysis will determine whether they should be model features, metadata only, or represented in a way that does not prevent spatial generalisation.
 
 Latitude and longitude are potentially more appropriate for a model intended to generalise to unseen locations.
+
+### Feature extraction code (`feature_extraction.py`)
+ 
+`src/feature_extraction.py` builds the feature table from the 3-hour data. Feature extraction is an optional step for the milestone, but it is included because the features and the 6-hour-ahead target are what the splits label (`create_splits.py` needs the `target_block_start_utc` column created here).
+ 
+1. Each station is first placed on a complete 3-hour UTC grid (`ensure_full_grid()`), so a missing block is a visible gap rather than silently joining two distant blocks.
+2. The time features are derived from each station's local time (`add_temporal_features()`).
+3. The current block, three lags, rolling mean and standard deviation, and the target are added (`add_lag_rolling_and_target()`). The rolling window is 8 blocks (24 hours, including the input block) and the target is 2 blocks (6 hours) ahead.
+Rows without a full history or a valid target are dropped; nothing is imputed.
+ 
+```python
+# src/feature_extraction.py
+ROLLING_WINDOW_BLOCKS = 8   # 8 x 3h = 24h of history, including the current block
+TARGET_HORIZON_BLOCKS = 2   # 2 x 3h = 6h ahead
+ 
+def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
+    """time_block / day_of_week / month / season from each station's LOCAL time."""
+    parts = []
+    for tz_name, group in df.groupby("timezone"):
+        g = group.copy()
+        # drop tz info after converting: mixing several tz-aware zones in one
+        # column would collapse it to dtype 'object' and break .dt below
+        g["local_timestamp"] = g["block_start_utc"].dt.tz_convert(tz_name).dt.tz_localize(None)
+        parts.append(g)
+    df = pd.concat(parts).sort_index()
+ 
+    df["time_block"] = df["local_timestamp"].dt.hour // 3
+    df["day_of_week"] = df["local_timestamp"].dt.dayofweek
+    df["month"] = df["local_timestamp"].dt.month
+    season_map = {12: "winter", 1: "winter", 2: "winter", 3: "spring", 4: "spring", 5: "spring",
+                  6: "summer", 7: "summer", 8: "summer", 9: "autumn", 10: "autumn", 11: "autumn"}
+    df["season"] = df["month"].map(season_map)
+    return df
+ 
+def add_lag_rolling_and_target(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.sort_values(["station_id", "block_start_utc"])
+    df["pm25_current"] = df["pm25_3h_mean"]
+    grouped = df.groupby("station_id")["pm25_3h_mean"]
+ 
+    for k in (1, 2, 3):
+        df[f"pm25_lag_{k}"] = grouped.shift(k)
+    df["pm25_rolling_mean"] = grouped.transform(
+        lambda s: s.rolling(ROLLING_WINDOW_BLOCKS, min_periods=ROLLING_WINDOW_BLOCKS).mean())
+    df["pm25_rolling_std"] = grouped.transform(
+        lambda s: s.rolling(ROLLING_WINDOW_BLOCKS, min_periods=ROLLING_WINDOW_BLOCKS).std())
+ 
+    # the grid is gap-free, so shifting by N rows is exactly N blocks
+    df["target_pm25"] = grouped.shift(-TARGET_HORIZON_BLOCKS)
+    df["target_block_start_utc"] = df["block_start_utc"] + pd.Timedelta(hours=3 * TARGET_HORIZON_BLOCKS)
+    return df
+```
 
 ---
 
@@ -710,6 +959,8 @@ Every collection run (each run of upload_raw_data.py) records:
 
 This means another student can rerun the collection code using the documented configuration and identify exactly which source files were used.
 
+Until the download scripts are completed, the download step is manual (guides in Section 5). The rest of collection is scripted: the downloaded files are placed under `raw_data/<source>/<raw_folder>/` (the `raw_folder` column of `metadata/station_reference.csv`) and uploaded by `upload_raw_data.py` (Section 1), which writes the manifest record above. `metadata/station_reference.csv` also holds the station selection listed above in machine-readable form and is read by every pipeline script (Section 10, Station mapping).
+
 The ingestion scripts will not manually edit the downloaded source files.
 
 A requirements.txt file will also be included to streamline and simplify any necessary installations. Note that torch and google-cloud-bigquery will be included in requirements.txt, even though the decision has not yet been made on whether these will be implemented. They are currently commented out for this reason as are some M4 requirements.
@@ -754,6 +1005,36 @@ Create chronological/geographical splits
 Write versioned Parquet datasets
 ```
 
+### Code overview and run order
+ 
+Step 1 (downloading) is currently manual (Section 5); the download scripts are still in development and are not part of this milestone. The scripts in `src/` run in this order:
+ 
+| Order | Script | What it does | Why it is included |
+|---|---|---|---|
+| 1 | `upload_raw_data.py` | Uploads the raw files to GCS and records the raw manifest | **Required: moves the raw data into storage** (Section 1) |
+| 2 | `canonicalize_raw_data.py` | Parses the EPA, UK-AIR and EEA files into one hourly table keyed by `station_id` with UTC timestamps | Extra, but the splits and stored datasets are built from its output, and it holds the timestamp and quality rules (this section) |
+| 3 | `validate_data_quality.py` | Writes completeness, duplicate and value-sanity reports | Extra: data-quality checks, kept and documented as part of the work done (Missing observations) |
+| 4 | `aggregate_to_3hour.py` | Hourly to 3-hour mean blocks | Extra: the target and features are defined on these blocks (Aggregation) |
+| 5 | `feature_extraction.py` | Lag, rolling and temporal features and the 6-hour-ahead target | Optional step, included because the splits label its output (Section 7) |
+| 6 | `create_splits.py` | Labels each row train / dev / test / held-out / future | **Required: train/dev/test split** (Section 6) |
+| 7 | `store_preprocessed_data.py` | Writes all processed stages to GCS and the dataset manifest | **Required: stores the preprocessed data** (Section 2) |
+ 
+The scripts marked **Required** are the ones the milestone asks for. The others are included because the required scripts depend on their output (the split can only label features, and features can only be built from cleaned 3-hour data) and because data validation is part of the work that was done; leaving them out would make the project impossible to reproduce.
+ 
+Supporting files used by every script: `config.py` (folder paths, pipeline version, git commit), `stations.py` (loads and validates `metadata/station_reference.csv`) and `requirements.txt`.
+ 
+To run the pipeline from the repository root (steps 1 and 7 need `GCP_PROJECT_ID` and `GCS_BUCKET_NAME` set as environment variables and Google Cloud application-default credentials):
+ 
+```
+python src/upload_raw_data.py
+python src/canonicalize_raw_data.py
+python src/validate_data_quality.py
+python src/aggregate_to_3hour.py
+python src/feature_extraction.py
+python src/create_splits.py
+python src/store_preprocessed_data.py
+```
+
 ## Station mapping
 
 Every station is keyed on its EU code (station_id) in metadata/station_reference.csv.
@@ -776,6 +1057,32 @@ source_name_check
 availability_start
 coordinates_source
 ```
+
+Station identity is handled by two small files: `metadata/station_reference.csv` (the table above) and `src/stations.py`, which loads it and stops with a complete list of problems if it is malformed (duplicate IDs, blank fields, unknown time zones, overlapping folders and so on). EPA and UK-AIR files do not contain the EU code, so `canonicalize_raw_data.py` matches each file to its station through the `raw_folder` column; EEA files are identified by the station code inside the file (`source_download_id`).
+ 
+```python
+# excerpt from load_station_reference() in src/stations.py
+folders = raw.assign(raw_folder=raw["raw_folder"].str.replace("\\", "/", regex=False).str.strip("/ "))
+for source, grp in folders.groupby("source"):
+    pairs = list(zip(grp["station_id"], grp["raw_folder"]))
+    for a_id, a in pairs:
+        for b_id, b in pairs:
+            if a_id != b_id and (a == b or b.startswith(a + "/")):
+                problems.append(f"{source}: raw_folder {a!r} ({a_id}) overlaps {b!r} ({b_id}) - "
+                                f"each station needs its own non-nested folder")
+```
+ 
+```python
+# src/canonicalize_raw_data.py
+def station_for_folder(file_path: Path, source_dir: Path, folders: "pd.Series"):
+    """Which station's raw_folder contains this file? (None if none does.)
+    `folders` maps station_id -> raw_folder (relative to source_dir, '/' separated)."""
+    rel = file_path.relative_to(source_dir).parent.as_posix()
+    rel = "" if rel == "." else rel
+    hits = [sid for sid, folder in folders.items() if rel == folder or rel.startswith(folder + "/")]
+    return hits[0] if len(hits) == 1 else None
+```
+
 ---
 
 ## Time standardisation
@@ -784,6 +1091,29 @@ Source timestamps will be converted into a consistent time representation before
 
 Time-zone handling will be explicitly recorded because the project uses measurements from multiple countries.
 Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly.
+
+In `canonicalize_raw_data.py` every source is converted to the same convention: hourly timestamps in UTC, labelled by the start of the hour. UK-AIR and EPA files are labelled by the end of the hour and EEA hourly files are labelled in UTC+1, so one hour is subtracted in each case. UK-AIR writes the last hour of each day as `24:00`, which is handled by adding the clock time to the date as a duration.
+ 
+```python
+# src/canonicalize_raw_data.py
+# Timestamp conventions. A row stamped 09:00 under "hour ending" covers
+# 08:00-09:00; we shift to interval-START so all sources match.
+UKAIR_TIMESTAMPS_ARE_HOUR_ENDING = True  # stated in every UK-AIR file header: "GMT hour ending"
+EPA_TIMESTAMPS_ARE_HOUR_ENDING = True    # INFERRED, not documented: files start each day at 01:00.
+#   Could be confirmed by comparing with validated EEA data for the same station.
+# EEA: Start/End bound each hour (already interval-start) but the service
+# labels them UTC+1 for every country, so we subtract 1h to reach true UTC.
+EEA_LABEL_UTC_OFFSET_HOURS = 1
+ 
+# UK-AIR labels each day's last hour "24:00", which datetime parsing rejects,
+# so build the timestamp as (date at midnight) + (HH:MM as a duration);
+# "24:00" then correctly becomes the next day's 00:00.
+day = pd.to_datetime(df[date_col].astype(str), format="%d-%m-%Y", errors="coerce")
+clock = pd.to_timedelta(df[time_col].astype(str).str.strip() + ":00", errors="coerce")
+timestamp = day + clock
+if UKAIR_TIMESTAMPS_ARE_HOUR_ENDING:
+    timestamp = timestamp - pd.Timedelta(hours=1)
+```
 
 ---
 
@@ -804,6 +1134,62 @@ An initial target of approximately 75% valid PM2.5 coverage per year will be use
 
 A block is valid with at least 2 of 3 hourly values. A feature row needs the input block, all 3 lags, all 8 rolling blocks and the target to be valid with nothing imputed. The 75% figure is a diagnostic. Failing station-years are flagged, not removed.
 
+These rules are implemented in two places. `canonicalize_raw_data.py` applies the source quality rules: EEA rows are valid only if their `Validity` flag is 1, 2 or 3 (invalid rows carry placeholder values such as -9999 and become missing), empty EPA placeholder rows stamped off the hour are dropped, and if two files give different values for the same station-hour the run stops instead of choosing one. `validate_data_quality.py` is an extra quality-check step: it measures the share of valid hours per station and year against the hours expected from `availability_start` and writes its reports to `processed_data/quality_reports/`. It is a diagnostic only; nothing is removed.
+ 
+```python
+# src/canonicalize_raw_data.py
+# EEA Validity codes we accept. 1 = valid. 2 = valid but below the detection
+# limit (the measured value is given). 3 = valid, below the detection limit,
+# value replaced by half the limit. Everything else (-1, -99, ...) is invalid
+# and carries a sentinel value (0, -999, -9999) that must never be used.
+EEA_VALID_CODES = (1, 2, 3)
+ 
+# excerpt from parse_eea_file()
+value = pd.to_numeric(df[col["value"]], errors="coerce")
+if "validity" in col:
+    validity = pd.to_numeric(df[col["validity"]], errors="coerce")  # handles "1" vs 1
+    invalid = ~validity.isin(EEA_VALID_CODES)
+    below_limit = validity.isin((2, 3))
+    if invalid.any():
+        print(f"  {path.name}: {int(invalid.sum())} invalid rows (Validity not in {EEA_VALID_CODES}) set to NaN.")
+    if below_limit.any():
+        print(f"  {path.name}: kept {int(below_limit.sum())} readings flagged valid-but-below-detection-limit.")
+    value = value.where(~invalid)
+```
+ 
+```python
+# src/validate_data_quality.py
+COMPLETENESS_THRESHOLD = 0.75
+ 
+def check_completeness(df: pd.DataFrame, stations: pd.DataFrame) -> pd.DataFrame:
+    df = df.drop_duplicates(["station_id", "timestamp_utc"], keep="first")
+    rows = []
+    for _, st in stations.iterrows():
+        avail_start = max(STUDY_START, pd.Timestamp(st["availability_start"], tz="UTC"))
+        s_df = df[df["station_id"] == st["station_id"]]
+        for year in range(avail_start.year, STUDY_END.year + 1):
+            win_start = max(avail_start, pd.Timestamp(f"{year}-01-01 00:00", tz="UTC"))
+            win_end = min(STUDY_END, pd.Timestamp(f"{year}-12-31 23:00", tz="UTC"))
+            expected = int((win_end - win_start).total_seconds() // 3600) + 1
+            in_win = s_df[(s_df["timestamp_utc"] >= win_start) & (s_df["timestamp_utc"] <= win_end)]
+            valid = int(in_win["pm25"].notna().sum())
+            rows.append({"station_id": st["station_id"], "station_name": st["station_name"], "year": year,
+                         "expected_from": win_start.date(), "valid_hours": valid, "expected_hours": expected,
+                         "completeness_pct": round(100 * valid / expected, 1),
+                         "passes_threshold": valid / expected >= COMPLETENESS_THRESHOLD})
+    report = pd.DataFrame(rows)
+    failing = report[~report["passes_threshold"]]
+    if failing.empty:
+        print(f"All expected station-years reach {COMPLETENESS_THRESHOLD:.0%} completeness.")
+    else:
+        print(f"{len(failing)} expected station-year(s) below {COMPLETENESS_THRESHOLD:.0%} "
+              f"(0% usually means not downloaded yet):")
+        print(failing[["station_id", "station_name", "year", "valid_hours", "expected_hours", "completeness_pct"]]
+              .to_string(index=False))
+    print("Note: this is a diagnostic - the station set is fixed and nothing is removed automatically.")
+    return report
+```
+
 ---
 
 ## Aggregation
@@ -818,6 +1204,26 @@ The aggregation rule defines:
 - how invalid/quality-flagged measurements are treated.
 
 The project will not silently fill missing target observations.
+
+Implemented in `aggregate_to_3hour.py`: blocks are fixed 3-hour windows on the UTC clock, and a block's mean is kept only if at least 2 of its 3 hours are valid. The number of valid hours is stored in `valid_hours`. This script is included because the target and all features are defined on these blocks.
+ 
+```python
+# src/aggregate_to_3hour.py
+MIN_VALID_HOURS = 2  # out of 3, per block
+ 
+def aggregate_station(group: pd.DataFrame) -> pd.DataFrame:
+    group = group.set_index("timestamp_utc").sort_index()
+    if group.index.has_duplicates:
+        raise SystemExit("Duplicate hours found in the canonical file - re-run canonicalize_raw_data.py, "
+                         "which is responsible for resolving them.")
+    resampled = group["pm25"].resample("3h")
+    block_mean, valid_hours = resampled.mean(), resampled.count()
+    out = pd.DataFrame({"block_start_utc": block_mean.index,
+                        "pm25_3h_mean": block_mean.values,
+                        "valid_hours": valid_hours.values})
+    out.loc[out["valid_hours"] < MIN_VALID_HOURS, "pm25_3h_mean"] = float("nan")
+    return out
+```
 
 ---
 
@@ -855,6 +1261,8 @@ The time_block feature is 0-7 arranged thus:
 | 6 | 18:00–20:59 |
 | 7 | 21:00–23:59 |
 
+The target and the time features are created in `feature_extraction.py` (`add_lag_rolling_and_target()` and `add_temporal_features()`, shown in Section 7).
+
 ---
 
 ## Lag features
@@ -876,6 +1284,8 @@ The forecast is issued after the input block has completed, so its mean (pm25_cu
 
 No measurements from the target block or any later period are used to create the lag features.
 
+Implemented in `add_lag_rolling_and_target()` in `feature_extraction.py` (code in Section 7): lag k is the block shifted back by k rows, which is exactly k blocks because the grid has no gaps.
+
 ---
 
 ## Rolling features
@@ -890,6 +1300,8 @@ The initial features will include:
 Only observations available before the target period are used.
 
 The rolling-window length will be treated as a configuration parameter and selected using the training/development data. The final 2025 test data will not be used to choose the window length.
+
+Implemented in `add_lag_rolling_and_target()` in `feature_extraction.py` (code in Section 7). The default window is 8 blocks (24 hours, including the input block).
 
 ---
 
