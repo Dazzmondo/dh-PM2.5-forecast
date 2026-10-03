@@ -1536,5 +1536,347 @@ The following decisions are intentionally left open until the actual data has be
 These decisions will be made using the training/development data and documented as part of the reproducible M2 pipeline rather than being selected retrospectively using the final test set.
 
 ---
-# Setup Guide (will be filled in later, README is intentionally designed to match peer-review marking scheme)
+# Setup Guide (not necessary for peer-marking):
 
+## Running the pipeline on your own Google Cloud bucket
+
+This guide takes you from a fresh computer to a finished run of the pipeline, with the data uploaded to your own Google Cloud Storage bucket. The download scripts are not used: the raw files are downloaded by hand, as described in Section 5.
+
+**Which terminal am I using?** The few commands that differ between terminals are given twice, once for **PowerShell** and once for **bash** (Git Bash on Windows, the macOS Terminal, Linux, or WSL). Use the block that matches your terminal:
+- PowerShell: the prompt starts with `PS C:\...>`.
+- bash: the prompt ends with `$` (Git Bash also shows `MINGW64`). VS Code's terminal can be either; its tab shows which.
+
+If a command fails with "command not found", you are probably typing the other kind of command. The `git`, `python`, `pip` and `gcloud` commands are the same in both.
+
+### Step 0 — Get the code and the raw data ready
+
+**0.1 Install Python and Git (once).**
+- Python 3.10 or newer, from python.org. On Windows, tick "Add python.exe to PATH" in the installer.
+- Git, from git-scm.com.
+- Check both in a new terminal window: `python --version` and `git --version` (Mac/Linux: `python3 --version`).
+
+**0.2 Get the code.**
+```
+git clone <repository URL>
+cd dh-PM2.5-forecast
+```
+The folder is named after the repository. It contains the scripts (`src/`), `metadata/station_reference.csv` and `requirements.txt`. It does not contain the raw data: you download that in 0.3. If your copy already has a `raw_data/` folder full of files, skip to 0.6.
+
+**0.3 Download the raw data.** Follow the "Manual raw data download guide" in Section 5 and let the files save to your Downloads folder as normal. When you have finished, you should have:
+
+| Source | What you should have downloaded | What the files look like |
+|---|---|---|
+| UK-AIR | 8 yearly CSVs (2018–2025) for each of London N. Kensington, London Bloomsbury, Belfast Centre and Derry: 32 files | Site code, underscore, year: `KC1_2018.csv`, `BEL2_2018.csv` |
+| EEA | One download for Denmark, France, Greece and Spain, as a zip. Unzip it. | Many `.parquet` files, one per sampling point, covering every station in the selected cities. The station code is in the name: `SPO-GR0003A_06001_100.parquet`, `SP_28079038_9_47.parquet` |
+| EPA | For each of the 6 Irish stations, one CSV per six-month period from January 2022 to December 2025 (about 8 per station) | Named only by date range: `010122-020722.csv`. **The name does not say which station the file is for.** |
+
+**0.4 Create the folders.** The scripts find each file by the folder it sits in, so the folder names must match exactly, capital letters included. Inside the repository folder you should end up with this:
+```
+dh-PM2.5-forecast/
+├── src/                                  (the scripts)
+├── metadata/station_reference.csv        (already in the repository)
+└── raw_data/                             (you create this)
+    ├── epa/
+    │   ├── cork/
+    │   ├── dublin/
+    │   │   ├── dublinKilmainham/
+    │   │   └── dublinRathmines/
+    │   ├── galway/
+    │   ├── limerick/
+    │   └── waterford/
+    ├── uk_air/
+    │   ├── belfast/
+    │   ├── derry/
+    │   └── london/
+    │       ├── londonBloomsbury/
+    │       └── londonKensington/
+    └── eea/
+        ├── athens/
+        │   ├── athensAristotelous/
+        │   └── athensParaskevi/
+        ├── copenhagen/
+        ├── madrid/
+        │   ├── madridCuatroCaminos/
+        │   └── madridEscuelasAguirre/
+        └── paris/
+            ├── parisGennevilliers/
+            └── parisSaintDenis/
+```
+To create all 17 folders at once, run this from the repository folder.
+
+PowerShell:
+```
+New-Item -ItemType Directory -Force -Path @(
+  "raw_data\epa\cork",
+  "raw_data\epa\dublin\dublinKilmainham",
+  "raw_data\epa\dublin\dublinRathmines",
+  "raw_data\epa\galway",
+  "raw_data\epa\limerick",
+  "raw_data\epa\waterford",
+  "raw_data\uk_air\belfast",
+  "raw_data\uk_air\derry",
+  "raw_data\uk_air\london\londonBloomsbury",
+  "raw_data\uk_air\london\londonKensington",
+  "raw_data\eea\athens\athensAristotelous",
+  "raw_data\eea\athens\athensParaskevi",
+  "raw_data\eea\copenhagen",
+  "raw_data\eea\madrid\madridCuatroCaminos",
+  "raw_data\eea\madrid\madridEscuelasAguirre",
+  "raw_data\eea\paris\parisGennevilliers",
+  "raw_data\eea\paris\parisSaintDenis"
+) | Out-Null
+```
+
+bash:
+```
+mkdir -p raw_data/epa/cork raw_data/epa/dublin/dublinKilmainham raw_data/epa/dublin/dublinRathmines \
+  raw_data/epa/galway raw_data/epa/limerick raw_data/epa/waterford \
+  raw_data/uk_air/belfast raw_data/uk_air/derry raw_data/uk_air/london/londonBloomsbury \
+  raw_data/uk_air/london/londonKensington \
+  raw_data/eea/athens/athensAristotelous raw_data/eea/athens/athensParaskevi raw_data/eea/copenhagen \
+  raw_data/eea/madrid/madridCuatroCaminos raw_data/eea/madrid/madridEscuelasAguirre \
+  raw_data/eea/paris/parisGennevilliers raw_data/eea/paris/parisSaintDenis
+```
+
+**0.5 Put each file in its station's folder.**
+
+| Station | Folder inside `raw_data/` | Which files go there |
+|---|---|---|
+| Dublin Rathmines | `epa/dublin/dublinRathmines` | The EPA CSVs you downloaded for Rathmines |
+| Dublin Kilmainham | `epa/dublin/dublinKilmainham` | The EPA CSVs you downloaded for Kilmainham |
+| Cork UCC | `epa/cork` | The EPA CSVs you downloaded for University College Cork |
+| Limerick People's Park | `epa/limerick` | The EPA CSVs you downloaded for People's Park |
+| Waterford Paddy Browne's Road | `epa/waterford` | The EPA CSVs you downloaded for Paddy Browne's Road |
+| Galway Briarhill | `epa/galway` | The EPA CSVs you downloaded for Briarhill |
+| Belfast Centre | `uk_air/belfast` | Files with `BEL2_` in the name |
+| Derry Rosemount | `uk_air/derry` | Files with `DERR_` in the name |
+| London Bloomsbury | `uk_air/london/londonBloomsbury` | Files with `CLL2_` in the name |
+| London N. Kensington | `uk_air/london/londonKensington` | Files with `KC1_` in the name |
+| Athens Agia Paraskevi | `eea/athens/athensParaskevi` | `.parquet` files with `GR0039A` in the name |
+| Athens Aristotelous | `eea/athens/athensAristotelous` | `.parquet` files with `GR0003A` in the name |
+| Copenhagen | `eea/copenhagen` | `.parquet` files with `DK0034A` in the name (three files; one is a daily file that the pipeline skips but keeps) |
+| Madrid Cuatro Caminos | `eea/madrid/madridCuatroCaminos` | `.parquet` files with `28079038` in the name |
+| Madrid Escuelas Aguirre | `eea/madrid/madridEscuelasAguirre` | `.parquet` files with `28079008` in the name |
+| Paris Gennevilliers | `eea/paris/parisGennevilliers` | `.parquet` files with `FR04002` in the name |
+| Paris Saint-Denis | `eea/paris/parisSaintDenis` | `.parquet` files with `FR04058` in the name |
+
+You can drag and drop in File Explorer, or use these commands from the repository folder.
+
+*UK-AIR* (the site code is in each file name, so one command per station moves them all):
+
+PowerShell:
+```
+$dl = "$HOME\Downloads"
+Move-Item "$dl\*KC1_*.csv"  "raw_data\uk_air\london\londonKensington\"
+Move-Item "$dl\*CLL2_*.csv" "raw_data\uk_air\london\londonBloomsbury\"
+Move-Item "$dl\*BEL2_*.csv" "raw_data\uk_air\belfast\"
+Move-Item "$dl\*DERR_*.csv" "raw_data\uk_air\derry\"
+```
+
+bash:
+```
+dl=~/Downloads
+mv "$dl"/*KC1_*.csv  raw_data/uk_air/london/londonKensington/
+mv "$dl"/*CLL2_*.csv raw_data/uk_air/london/londonBloomsbury/
+mv "$dl"/*BEL2_*.csv raw_data/uk_air/belfast/
+mv "$dl"/*DERR_*.csv raw_data/uk_air/derry/
+```
+
+*EEA* (this copies rather than moves, because the unzipped folder also holds files for stations the project does not use; replace the folder name with the one you unzipped):
+
+PowerShell:
+```
+$eea = "$dl\<name of the unzipped EEA folder>"
+Get-ChildItem $eea -Recurse -Filter "*GR0039A*.parquet"  | Copy-Item -Destination "raw_data\eea\athens\athensParaskevi\"
+Get-ChildItem $eea -Recurse -Filter "*GR0003A*.parquet"  | Copy-Item -Destination "raw_data\eea\athens\athensAristotelous\"
+Get-ChildItem $eea -Recurse -Filter "*DK0034A*.parquet"  | Copy-Item -Destination "raw_data\eea\copenhagen\"
+Get-ChildItem $eea -Recurse -Filter "*28079038*.parquet" | Copy-Item -Destination "raw_data\eea\madrid\madridCuatroCaminos\"
+Get-ChildItem $eea -Recurse -Filter "*28079008*.parquet" | Copy-Item -Destination "raw_data\eea\madrid\madridEscuelasAguirre\"
+Get-ChildItem $eea -Recurse -Filter "*FR04002*.parquet"  | Copy-Item -Destination "raw_data\eea\paris\parisGennevilliers\"
+Get-ChildItem $eea -Recurse -Filter "*FR04058*.parquet"  | Copy-Item -Destination "raw_data\eea\paris\parisSaintDenis\"
+```
+
+bash:
+```
+eea="$dl/<name of the unzipped EEA folder>"
+find "$eea" -name "*GR0039A*.parquet"  -exec cp {} raw_data/eea/athens/athensParaskevi/ \;
+find "$eea" -name "*GR0003A*.parquet"  -exec cp {} raw_data/eea/athens/athensAristotelous/ \;
+find "$eea" -name "*DK0034A*.parquet"  -exec cp {} raw_data/eea/copenhagen/ \;
+find "$eea" -name "*28079038*.parquet" -exec cp {} raw_data/eea/madrid/madridCuatroCaminos/ \;
+find "$eea" -name "*28079008*.parquet" -exec cp {} raw_data/eea/madrid/madridEscuelasAguirre/ \;
+find "$eea" -name "*FR04002*.parquet"  -exec cp {} raw_data/eea/paris/parisGennevilliers/ \;
+find "$eea" -name "*FR04058*.parquet"  -exec cp {} raw_data/eea/paris/parisSaintDenis/ \;
+```
+
+*EPA* (the file names do not identify the station, so sort these as you go): download one station at a time, and drag its files into that station's folder before you download the next station. If all the CSVs are already mixed together in Downloads, open each one to see which station it is before filing it.
+
+Rules for all files:
+- Keep the files exactly as downloaded. Do not rename, edit, merge, or open and re-save them (in Excel, for example): the raw files must stay unchanged.
+- Do not leave extra files in `raw_data/`: no merged CSVs, no duplicate copies such as `KC1_2018 (1).csv`, and no folders for stations the project does not use.
+- The pipeline catches most misplaced files, but not all:
+  - A file in a folder that is not in the structure above stops the run, and the message names the file.
+  - A UK-AIR file in the wrong station's folder stops the run, because the station name inside each file is checked.
+  - An EEA file in the wrong station's folder stops the run. An EEA file for a station the project does not use is skipped with a warning.
+  - EPA files are the exception: they do not contain the station name. A misplaced EPA file is caught only if it overlaps, and disagrees with, another file for the same station (the run then stops with "DIFFERENT PM2.5 values"). Check the EPA folders by hand.
+
+**0.6 Check the result.** From the repository folder:
+
+PowerShell:
+```
+Get-ChildItem raw_data -Recurse -File | Group-Object DirectoryName | Select-Object Count, Name | Format-Table -AutoSize
+(Get-ChildItem raw_data -Recurse -File).Count
+```
+
+bash (the first line prints the total, the loop prints the file count of each folder):
+```
+find raw_data -type f | wc -l
+for d in $(find raw_data -type d | sort); do n=$(find "$d" -maxdepth 1 -type f | wc -l); [ "$n" -gt 0 ] && echo "$n  $d"; done
+```
+You should see 17 folders. In the project's own dataset:
+- Each UK-AIR folder holds 8 files.
+- The EPA folders hold 8 files each, except Kilmainham and Galway with 7 (Kilmainham has no data after 29 January 2025, and Galway starts in December 2022).
+- Each EEA folder holds 1 file, except Copenhagen with 3.
+- The total is 87 files (46 EPA + 32 UK-AIR + 9 EEA).
+
+Note the total: the upload in Step 7 prints the same number. Differences are fine if you downloaded a different date range, but every folder must contain files.
+
+### Step 1 — Create a Google Cloud project
+
+- In console.cloud.google.com, create or choose a project and copy its **Project ID**. It looks like `my-project-123456` and is not the display name.
+- The project needs billing linked (the free trial works) and you need to be its owner. That covers creating the bucket and turning on versioning.
+
+### Step 2 — Install the Google Cloud CLI and sign in
+
+Install it from cloud.google.com/sdk/docs/install, then open a new terminal window and run these four commands, in this order:
+```
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud auth application-default login
+gcloud services enable storage.googleapis.com
+```
+The third command creates the credentials the Python scripts use. They are kept outside the repository. Setting the project first lets it attach the right project to them.
+
+### Step 3 — Decide the bucket name (you do not create it yourself)
+
+You do **not** create the bucket in the Cloud Console. `upload_raw_data.py` creates it automatically the first time it runs, in the EU region with object versioning switched on. If the bucket already exists, the script uses it.
+
+Your only job in this step is to decide the name. It must be unique across all of Google Cloud and use only lowercase letters, numbers and hyphens (3 to 63 characters), for example `my-pm25-forecast-bucket`. You give the name to the script in Step 5. It may be the same text as your project ID: project IDs and bucket names are separate things.
+
+### Step 4 — Create the Python environment
+
+From the repository folder (where Step 0 left you):
+PowerShell:
+```
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+If PowerShell blocks the activate script, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` and try again.
+
+bash:
+```
+python -m venv .venv
+source .venv/Scripts/activate
+pip install -r requirements.txt
+```
+On macOS, Linux and WSL the activate script is `source .venv/bin/activate` and the Python command is `python3`. When the environment is active, the prompt starts with `(.venv)`.
+
+### Step 5 — Tell the scripts your project ID and bucket name
+
+The scripts need your project ID (Step 1) and your bucket name (Step 3). They read them from two **environment variables**: named settings that a terminal window holds and hands to every program you start from that window.
+
+- There is no file to create. A `.env` file is not used, and neither script reads one.
+- Type the two lines into the **same terminal window** you will run the scripts from in Step 7, pressing Enter after each. Nothing is printed when it works.
+- They last until you close that window (in VS Code, each terminal tab is separate). Type them again in any new window.
+
+Replace the values with your own.
+
+PowerShell:
+```
+$env:GCP_PROJECT_ID = "your-project-id"
+$env:GCS_BUCKET_NAME = "your-bucket-name"
+```
+
+bash:
+```
+export GCP_PROJECT_ID="your-project-id"
+export GCS_BUCKET_NAME="your-bucket-name"
+```
+In bash there must be **no spaces around `=`** and no `$env:`. `$env:` is PowerShell-only: in bash it fails with `env:GCP_PROJECT_ID: command not found`.
+
+Check that they are set, in the same window. It should print your value (nothing printed means the variable is not set in this window):
+- PowerShell: `echo $env:GCP_PROJECT_ID`
+- bash: `echo $GCP_PROJECT_ID`
+
+### Step 6 — Final check before running
+
+- Run `git status` and commit anything pending, otherwise the manifest records the commit as `-dirty` (harmless but untidy).
+- Make sure `raw_data/` still holds the file count from Step 0.6.
+
+### Step 7 — Run the pipeline
+
+From the repository folder:
+```
+python src/upload_raw_data.py
+python src/canonicalize_raw_data.py
+python src/validate_data_quality.py
+python src/aggregate_to_3hour.py
+python src/feature_extraction.py
+python src/create_splits.py
+python src/store_preprocessed_data.py
+```
+Steps 2–6 of this list run entirely on your own machine and do not need Google Cloud. Run `upload_raw_data.py` before `store_preprocessed_data.py`.
+
+**What a correct run prints**, for the project's own dataset (the file counts and row counts differ if your files differ):
+- **upload:**
+  - `Created bucket: gs://…`
+  - `87 new, 0 updated, 0 unchanged (skipped).`
+  - `Manifest updated: 87 total entries.`
+  - `Counts match.`
+- **canonicalize:**
+  - It skips the daily Copenhagen file (`SPO-DK0034A_06001_103.parquet`).
+  - `Coverage: 17 / 17 stations`
+  - `Saved 943899 canonical hourly rows`
+- **validate:**
+  - Four lines ending "OK".
+  - `5 expected station-year(s) below 75%`: Kilmainham 2025, Bloomsbury 2021 and 2022, Copenhagen 2021 and 2025. They are flagged, not removed.
+  - 5,663 negative values.
+  - 7 values above 500.
+- **aggregate:** `318791 3-hour blocks, 19701 failed the 2/3-hour rule`
+- **features:** `285551 remain`, 22 columns
+- **splits:**
+  - train 123,364, dev 31,192, test 25,921, held_out_test 13,362 and excluded 91,712.
+  - `Leakage check passed`
+  - Held-out rows per station: FR04002=2,304, FR04058=2,734, GB0566A=2,892, GB0620A=2,880, GB1060A=2,552.
+- **store:** it uploads the canonical, 3-hour and feature tables, four split files and the station table, then `Manifest entry appended`. `No rows for split 'future_update' - skipping upload.` is normal, because there is no 2026 data yet.
+
+### Step 8 — Check it worked
+
+```
+gcloud storage ls -r gs://YOUR_BUCKET/
+gcloud storage cat gs://YOUR_BUCKET/manifests/dataset_versions.jsonl
+```
+- **Folders:** you should see `raw/`, `processed/` (canonical, three_hour, features, splits), `manifests/` and `metadata/station_reference.csv`.
+  - There is no `future_update/` or `models/` folder yet. Cloud Storage does not keep empty folders, so planned folders appear only once files go in.
+  - The scripts do not upload `metadata/source_metadata/`. To add it, run `gcloud storage cp --recursive metadata/source_metadata gs://YOUR_BUCKET/metadata/`.
+- **Versioning:** in the Cloud Console, open Cloud Storage, then Buckets, then your bucket, then Protection. "Object versioning" should say Enabled.
+- **Skip logic:** run `python src/upload_raw_data.py` a second time. It should print `0 new, 0 updated, 87 unchanged (skipped)` and add no manifest lines.
+- **Re-running the store step:** this is safe. It appends one more manifest line, and the old copies of the files are kept by versioning.
+
+### If something fails
+
+| Message | Fix |
+|---|---|
+| `GCP_PROJECT_ID and GCS_BUCKET_NAME are not set` | Set them again in this window (Step 5). They are forgotten when a terminal window closes. |
+| `command not found` when you set them, for example `env:GCP_PROJECT_ID: command not found` | You typed PowerShell syntax in a bash terminal, or put spaces around `=`. In bash use `export GCP_PROJECT_ID="..."` with no spaces (Step 5). |
+| `DefaultCredentialsError` | Run `gcloud auth application-default login`. |
+| `403` or `409` on the first upload call | The bucket name is probably taken by someone else, or your account lacks Storage Admin on the project. Try another name and check the project ID. |
+| Warning about a "quota project" | It is harmless. To silence it, run `gcloud auth application-default set-quota-project YOUR_PROJECT_ID`. |
+| `STOPPED - these files could not be used` | The message lists each file and the reason, usually a file in a folder that is not in the structure, or a UK-AIR or EEA file in the wrong station's folder (Step 0.5). |
+| `STOPPED: no usable data for selected station(s)` | A folder is missing, empty, or named differently from the structure in Step 0.4. |
+| `STOPPED: … DIFFERENT PM2.5 values` | Two files disagree for the same station and hour, often an EPA file in the wrong station's folder or the same download twice with edits. |
+| PowerShell will not run the activate script | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first. |
+
+### Cost and clean-up
+
+The bucket holds roughly 100 MB, which should cost pennies or less per month. Each extra store run adds old versions. When you have finished, you can delete the bucket in the Cloud Console or just leave it.
