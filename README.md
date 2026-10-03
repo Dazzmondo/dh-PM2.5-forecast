@@ -195,6 +195,9 @@ def upload_local_tree(client, bucket_name: str, local_root: Path) -> None:
         print(f"Manifest updated: {len(manifest)} total entries.")
 ```
 
+![Google Cloud Console showing the bucket darragh-dh-pm25-forecast with the raw/eea/athens/athensAristotelous folder open](docs/images/01_upload_raw_data_bucket_created.png)
+*After running `python src/upload_raw_data.py`: the bucket has been created in the EU multi-region with object versioning, and the raw files are mirrored under `raw/` (shown: `raw/eea/athens/athensAristotelous/`). Only `raw/` and `manifests/` exist at this point.*
+
 ---
 
 # 2. Processed Data Storage and File Formats — 1.0 point
@@ -282,6 +285,12 @@ for split_name, gcs_path in SPLIT_TO_FOLDER.items():
 # 5. the station table that produced this dataset
 outputs.append(upload_file(bucket, REFERENCE_PATH, "metadata/station_reference.csv"))
 ```
+
+![Terminal output of store_preprocessed_data.py listing each uploaded file with its row count](docs/images/10_store_preprocessed_data_output.png)
+*After running `python src/store_preprocessed_data.py`: each processed stage is uploaded with its row count, `future_update` is skipped because there is no 2026 data yet, and a record is appended to `manifests/dataset_versions.jsonl`.*
+
+![Google Cloud Console showing the processed folder with canonical, features, splits and three_hour sub-folders, and dev.parquet inside splits/dev](docs/images/11_gcs_after_store_processed.png)
+*The bucket after the store step: `processed/` (canonical, features, splits, three_hour), `manifests/` and `metadata/` now exist (shown: `processed/splits/dev/dev.parquet`).*
 
 ---
 
@@ -781,6 +790,12 @@ def assign_splits(df: pd.DataFrame, train_start_year: pd.Series) -> pd.Series:
     return pd.Series(np.select(conditions, choices, default="excluded"), index=df.index)
 ```
 
+![Terminal output of create_splits.py with row counts per split, the leakage check and held-out rows per station](docs/images/08_create_splits_output.png)
+*After running `python src/create_splits.py`: rows per split (train 123,364; dev 31,192; test 25,921; held_out_test 13,362; excluded 91,712), the leakage check, and the held-out test rows per station.*
+
+![Terminal listing of processed_data/features showing pm25_features.parquet and pm25_features_with_splits.parquet](docs/images/09_create_splits_file.png)
+*`create_splits.py` saves `pm25_features_with_splits.parquet` next to `pm25_features.parquet`: the same rows plus a `split` column.*
+
 ---
 
 # 7. Feature Description — 1.0 point
@@ -878,6 +893,12 @@ def add_lag_rolling_and_target(df: pd.DataFrame) -> pd.DataFrame:
     df["target_block_start_utc"] = df["block_start_utc"] + pd.Timedelta(hours=3 * TARGET_HORIZON_BLOCKS)
     return df
 ```
+
+![Terminal output of feature_extraction.py showing 33240 rows dropped and 285551 rows saved](docs/images/07_feature_extraction_output.png)
+*After running `python src/feature_extraction.py`: 33,240 rows without a full history or a valid target are dropped, leaving 285,551 feature rows.*
+
+![Terminal listing of processed_data/features showing pm25_features.parquet](docs/images/06_feature_extraction_file.png)
+*`processed_data/features/pm25_features.parquet` (285,551 rows, 22 columns) is created.*
 
 ---
 
@@ -1183,7 +1204,10 @@ if "validity" in col:
         print(f"  {path.name}: kept {int(below_limit.sum())} readings flagged valid-but-below-detection-limit.")
     value = value.where(~invalid)
 ```
- 
+
+![Terminal listing of processed_data showing canonical_hourly.parquet](docs/images/02_canonicalize_output_file.png)
+*After running `python src/canonicalize_raw_data.py`: `processed_data/canonical_hourly.parquet` is created.*
+
 ```python
 # src/validate_data_quality.py
 COMPLETENESS_THRESHOLD = 0.75   # a station-year with a smaller share of valid hours is flagged (not removed)
@@ -1222,6 +1246,12 @@ def check_completeness(df: pd.DataFrame, stations: pd.DataFrame) -> pd.DataFrame
     print("Note: this is a diagnostic - the station set is fixed and nothing is removed automatically.")
     return report
 ```
+
+![Terminal output of validate_data_quality.py listing the five station-years below 75 percent completeness](docs/images/03_validate_data_quality_output.png)
+*After running `python src/validate_data_quality.py`: the schema checks pass and the five station-years below the 75% completeness threshold are listed (flagged, not removed).*
+
+![Terminal listing of processed_data/quality_reports showing three CSV report files](docs/images/04_validate_data_quality_reports.png)
+*`validate_data_quality.py` also writes three reports to `processed_data/quality_reports/`: `completeness_report.csv`, `duplicates_report.csv` and `value_sanity_report.csv`.*
 
 ---
 
@@ -1264,6 +1294,9 @@ def aggregate_station(group: pd.DataFrame) -> pd.DataFrame:
     out.loc[out["valid_hours"] < MIN_VALID_HOURS, "pm25_3h_mean"] = float("nan")
     return out
 ```
+
+![Terminal output of aggregate_to_3hour.py and a listing showing three_hour_aggregated.parquet](docs/images/05_aggregate_to_3hour_output.png)
+*After running `python src/aggregate_to_3hour.py`: 318,791 three-hour blocks are produced and `processed_data/three_hour_aggregated.parquet` is created.*
 
 ---
 
