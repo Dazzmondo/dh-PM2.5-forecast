@@ -683,6 +683,23 @@ def windows(start: date, end: date):
         current = window_end + timedelta(days=1)
 ```
 
+**Before and after running the scripts.** The screenshots show the folders in the terminal (`ls`) before and after the four download scripts are run.
+ 
+![Terminal showing that the raw_data folder is empty before the download scripts are run](https://raw.githubusercontent.com/Dazzmondo/dh-PM2.5-forecast/main/docs/images/12_download_before_raw_data_empty.png)
+*Before: `ls` inside `raw_data/` prints nothing. The download scripts create the `epa/`, `uk_air/` and `eea/` folders and each station's sub-folder themselves.*
+ 
+![Terminal showing that the metadata/source_metadata folder is empty before the download scripts are run](https://raw.githubusercontent.com/Dazzmondo/dh-PM2.5-forecast/main/docs/images/13_download_before_source_metadata_empty.png)
+*Before: `metadata/source_metadata/` is empty too.*
+ 
+![Terminal showing the four download commands entered together and download_ukair.py saving the first Belfast RData files](https://raw.githubusercontent.com/Dazzmondo/dh-PM2.5-forecast/main/docs/images/14_download_running_ukair.png)
+*Running: the four commands from the start of this step are entered as one block, so they run one after another. `download_ukair.py` goes first and prints one `Saved` line per file (shown: `raw_data/uk_air/belfast/BEL2_2018.RData` to `BEL2_2021.RData`).*
+ 
+![Terminal listing of raw_data/epa/cork showing eight CSV files created by download_epa.py](https://raw.githubusercontent.com/Dazzmondo/dh-PM2.5-forecast/main/docs/images/15_download_after_epa_cork_files.png)
+*After: `raw_data/epa/cork/` holds the eight Cork CSV files created by `download_epa.py`, one per 183-day window. Each name is the station folder plus the window's start and end dates (for example `cork010122-020722.csv` covers 1 January to 2 July 2022).*
+ 
+![Terminal listing of metadata/source_metadata showing denmark, france, greece, ireland, spain and uk CSV files](https://raw.githubusercontent.com/Dazzmondo/dh-PM2.5-forecast/main/docs/images/16_download_after_source_metadata_files.png)
+*After: `metadata/source_metadata/` holds the six EEA metadata tables written by `download_source_metadata.py`: `denmark.csv`, `france.csv`, `greece.csv`, `ireland.csv`, `spain.csv` and `uk.csv`.*
+
 ### Station metadata
 
 `download_source_metadata.py` sends the request that the EEA Air Quality Viewer's "Download CSV" button sends (https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements). The page posts the chosen Country filter to `.../AQViewer/download?fqn=Airquality_Dissem.b2g.measurements&f=csv` and the server answers with a zip file holding `DataExtract.csv`. The script does this for Denmark, Spain, France, the United Kingdom, Greece and Ireland (the countries of `station_reference.csv`) and saves each table, unchanged, as `metadata/source_metadata/<country>.csv` (`uk.csv` for the United Kingdom). These tables are where the station IDs, coordinates and station types in `station_reference.csv` come from; no pipeline script reads them. Unlike the raw data, they are kept in git.
