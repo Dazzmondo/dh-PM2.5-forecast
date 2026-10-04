@@ -241,7 +241,7 @@ Parquet is appropriate because it provides:
 
 This is a deliberate choice based on **access pattern**, rather than simply using CSV because it is familiar.
 
-CSV will still be retained where it is the original UK-AIR and EPA source format.
+CSV will still be retained where it is the original EPA source format; UK-AIR files stay in their original R data (`.RData`) format.
 
 The distinction between **data type and storage format** is important:
 
@@ -314,7 +314,7 @@ This acts as the project's object-storage/data-lake layer.
 BigQuery is considered optional. The main reason for including it would be to demonstrate understanding. 
 BigQuery is not required for scalability at the current dataset size. Its potential value is providing a managed SQL analytical layer and demonstrating integration between object storage and a cloud analytical warehouse.
 
-However, the ~324,000 rows in the Parquet files could be analysed more simply with pandas in seconds. The trade-off for implementing BigQuery would be increased setup time, including dataset creation, load jobs, and IAM permissions.
+However, the ~400,000 rows in the Parquet files could be analysed more simply with pandas in seconds. The trade-off for implementing BigQuery would be increased setup time, including dataset creation, load jobs, and IAM permissions.
 
 BigQuery may be used where SQL-based exploration and analysis are useful.
 
@@ -515,7 +515,7 @@ EPA hourly monitoring data will provide Irish monitoring measurements.
 
 ### UK-AIR
 
-UK-AIR automatic monitoring files will provide measurements for the UK stations.
+UK-AIR automatic monitoring files (yearly `.RData` files) will provide measurements for the UK stations.
 
 The ingestion code will use Python tools including:
 
@@ -554,59 +554,166 @@ This is appropriate because historical data is accumulated and processed in rela
 The future M4 system can additionally demonstrate new data arriving and triggering a batch update/retraining workflow. Full continuous streaming is not required for the initial training pipeline because the forecasting task does not require online learning at every individual measurement.
 
 
-## Manual raw data download guide
+## Download scripts
 
-The aim will be to add 3 scripts to automate the raw data download process for each of the 3 sources - UKAir, EEA, and EPA, however the processes are different for each source. For now we will simply recommend downloading the raw data from each of the 3 sources manually. 
+The raw data and the station metadata are fetched by four scripts, run from the repository root:
 
-Here are the guides to downloading the raw data from each source:
+```
+python src/download_ukair.py
+python src/download_eea.py
+python src/download_epa.py
+python src/download_source_metadata.py
+```
 
-- UKAir (format CSV):
+| Script | Source | Format of the saved files | What it fetches | robots.txt |
+|---|---|---|---|---|
+| `src/download_ukair.py` | UK-AIR (Defra) | `.RData` (R data file) | the 32 yearly files (4 stations x 2018-2025) from `https://uk-air.defra.gov.uk/openair/R_data/` | `/datastore/` (the website's CSV files) is disallowed, `/openair/R_data/` is not |
+| `src/download_eea.py` | EEA | Parquet | the verified hourly PM2.5 file of each of the 7 stations, through the EEA download API | allows everything |
+| `src/download_epa.py` | EPA Ireland (airquality.ie) | CSV | one CSV per 183-day window and station, read from the readings page | no robots.txt |
+| `src/download_source_metadata.py` | EEA Air Quality Viewer | CSV | one metadata table per country (6 files) into `metadata/source_metadata/` | no robots.txt |
 
-1. Go to interactive map here: https://uk-air.defra.gov.uk/interactive-map
-2. Zoom in and click on relevant stations (London N. Kensington, London Bloomsbury, Belfast Centre, Derry)
-3. Select CSV data files for this site
-4. On the new page download the All Hourly Pollutant Data CSV file for each year between 2025 and 2018.
+The three raw-data scripts only write to `raw_data/<source>/<raw_folder>/` (the `raw_folder` column of `metadata/station_reference.csv`; the metadata script writes to `metadata/source_metadata/`), and all four skip files that already exist, retry on errors, write each file through a `.tmp` file so a crash cannot leave a half-written file, pause between requests so the public servers are not hammered, and print a summary (with a non-zero exit code if something failed). The EPA download is the slowest (about 10 minutes in testing); the other two take a few minutes. The upload to GCS stays in `upload_raw_data.py`, which adds the checksum and manifest record. The scripts do not edit what they saved, and the raw files are saved as received; the one exception is EPA, whose script converts the chart data in the page into a CSV because the site offers no CSV file to fetch.
 
-Note: You can find all relevant metadata for each station by clicking on the station and selecting site information.
+Where the files go:
 
+```text
+raw_data/
+├── eea/
+│   ├── athens/
+│   │   ├── athensAristotelous/
+│   │   └── athensParaskevi/
+│   ├── copenhagen/
+│   ├── madrid/
+│   │   ├── madridCuatroCaminos/
+│   │   └── madridEscuelasAguirre/
+│   └── paris/
+│       ├── parisGennevilliers/
+│       └── parisSaintDenis/
+├── epa/
+│   ├── cork/
+│   ├── dublin/
+│   │   ├── dublinKilmainham/
+│   │   └── dublinRathmines/
+│   ├── galway/
+│   ├── limerick/
+│   └── waterford/
+└── uk_air/
+    ├── belfast/
+    ├── derry/
+    └── london/
+        ├── londonBloomsbury/
+        └── londonKensington/
+```
 
-- EEA Europe (format Parquet):
+Each source stores its files differently, so the pipeline identifies the station differently: EPA and UK-AIR files by the folder they sit in (UK-AIR files also by the site name inside them), EEA files by the station code inside the file.
 
-1. Go to this url: https://eeadmz1-downloads-webapp.azurewebsites.net/
-2. Set filters. Country to DK, FR, GR, ES. Cities to Kobenhavn, Paris (Greater City), Athina, Madrid. Pollutants to PM2.5. Dataset to Primary validated data (E1a). Type to Hourly data. Note: if data is missing, try changing Type to Hourly/Daily data.
-3. Fill in email.
-4. Set Temporal coverage (start date and end date). 1 January 2018 to date of your choosing (31/12/2025 recommended. Keep 2026 for new data).
-5. Select Download format Parquet and select Download under Download Actions
-6. Unzip downloaded files
+### UK-AIR: why `.RData` files
 
-Note: EEA hourly files are converted to UTC+1 for every country while daily files are not. EPA and UK-AIR need no time-zone conversion, but both are hour-ending, and the pipeline shifts them back one hour. This is explicitly stated in the EEA and UKAir documentation, whereas it is simply inferred from an analysis of the data in the case of EPA data.
+UK-AIR's `robots.txt` (https://uk-air.defra.gov.uk/robots.txt) contains `Disallow: /datastore/`, and the CSV files offered on the UK-AIR website are stored there. A script that fetched them would ignore that rule, so `download_ukair.py` does not. UK-AIR also publishes the same hourly data as `.RData` files for the R package `openair`, under `/openair/R_data/`, a path `robots.txt` does not disallow. The files are published under the Open Government Licence v3.0.
 
-The Parquet files contain no station names, only a sampling-point code. For Denmark, France and Greece it contains the EU id (SPO-DK0034A_06001_104 is Copenhagen, DK0034A). The Spanish files use Spain's national code instead (SP_28079038_9_47 is Cuatro Caminos, ES1525A). Section 9 lists both codes.  For any new cities or stations added you will need to figure out the station id yourself. The full mapping is in metadata/station_reference.csv (columns station_id and source_download_id).
+An `.RData` file is how the statistics language R saves data tables. It is a compressed binary file instead of text, so it cannot be read in a text editor, and Python needs the `rdata` package to open it (it is in `requirements.txt`). Compared with the CSV file of the same station and year on the UK-AIR website:
+
+| | CSV (UK-AIR website) | `.RData` (used by the project) |
+|---|---|---|
+| Storage | plain text | compressed binary (gzip) R objects |
+| Site information | a few lines above the table | `site` and `code` columns in the table |
+| Time stamp | text: `dd-mm-yyyy` and `HH:MM`, hour ending, the day's last hour written `24:00` | a number (seconds since 1 January 1970, UTC) that already marks the start of the hour |
+| Per-value status (R = ratified, P = provisional) | in columns next to every pollutant | not included |
+| Content | one table with all pollutants | several tables (hourly, 15-minute, daily means and others); the hourly one has a single `PM2.5` column |
+
+The pipeline reads only the `.RData` files (`parse_ukair_rdata_file` in `canonicalize_raw_data.py`): the date needs no hour shift and no `24:00` repair, and the site name in each file is checked against the station of the folder.
+
+**Comparison with the CSV files.** While the scripts were being built, the 32 station-years had also been downloaded by hand as CSV files. The two forms were compared with the whole pipeline (scripts 2-6) run once on each. The same station-hours are present and missing, and the pipeline counts are identical. Of the 895,452 PM2.5 values, 711 (0.08%) differ, always by exactly 0.001 ug/m3 and always with the CSV value higher; they occur only at three UK stations (London Bloomsbury 179, Belfast Centre 344, London N. Kensington 188).
+
+**Where the 0.001 comes from (most likely cause, not verified).** Both formats give PM2.5 to three decimals. At an exact tie, such as a true value of 5.8255, the CSV rounds up (5.826) and the R file ends at 5.825, which fits how R stores numbers as binary fractions (5.8255 cannot be stored exactly and is held just below the tie). The unrounded source values are not available, so this could not be confirmed. The effect is 0.001 ug/m3 on 0.08% of values.
+
+```python
+# src/download_ukair.py
+URL_TEMPLATE = "https://uk-air.defra.gov.uk/openair/R_data/{site}_{year}.RData"
+
+# excerpt from main()
+dest = LOCAL_RAW_DIR / st.raw_folder / f"{st.source_download_id}_{year}.RData"
+# A year that already exists is skipped.
+# RISK: an existing file is never refreshed (see the module docstring).
+if dest.exists():
+    counts["skipped"] += 1
+    continue
+```
+
+### EEA
+
+`download_eea.py` calls the EEA download API's `ParquetFile/urls` endpoint (the one behind the EEA web app) with `requests`: one request for the verified PM2.5 files of DK, ES, FR and GR, then it keeps only the files whose name contains one of the project's seven station codes and downloads those. The API ignores date filters, so each file is the station's complete series (Copenhagen's `_100` file, and the Madrid and Paris files, start in 2013). The study period is 2018-2025: `create_splits.py` labels earlier rows `excluded`, and any trimming is left to a later step. A file is saved only if every row is hourly, so Copenhagen's daily `_103` file and Athens Agia Paraskevi's `_100` file are not saved. Only verified data (dataset E1a) is downloaded.
+
+Tested against files downloaded earlier by hand from the EEA web app: the script found 875 verified PM2.5 files for the four countries and saved the same 8 files, under the same names, and the values and validity flags of every hour that both contain are identical (0 differences in 8 files).
+
+```python
+# src/download_eea.py
+def is_hourly(content: bytes) -> bool:
+    """True if the Parquet file holds only hourly values (its AggType column says "hour" on every row).
+
+    canonicalize_raw_data.py skips daily files and stops on a file that mixes hourly and other rows, so
+    files that are not purely hourly are not saved.
+    """
+    df = pd.read_parquet(io.BytesIO(content), columns=["AggType"])
+    return set(df["AggType"].astype(str).str.lower().unique()) == {"hour"}
+
+# excerpt from main(): keep only the files whose name carries one of the project's station codes
+mine = [u for u in urls if st.source_download_id in u.split("/")[-1]]
+```
+
+### EPA Ireland
+
+The readings page https://airquality.ie/readings is an ordinary page request, for example `https://airquality.ie/readings?station=EPA-21&dateFrom=01+Jan+2022&dateTo=02+Jul+2022`. The server writes the readings straight into the HTML, inside the chart definition (one block per pollutant, with lines such as `[ Date.UTC(2022,0,4,20,0,0), 27 ]`, where JavaScript months start at 0). There is no separate data request, which is why nothing from airquality.ie shows under the browser's Fetch/XHR filter; the chart menu's "Download CSV" builds a CSV in the browser from the same data. `download_epa.py` reads the same series and writes a CSV (a `Date and Time` column and one column per pollutant). The site accepts about six months per request, so the script uses windows of 183 days (for example 1 January to 2 July 2022, then 3 July 2022 to 1 January 2023) and names the files by station and dates (`cork010122-020722.csv`: ddmmyy start, ddmmyy end).
+
+Tested for all six stations (47 windows, 46 saved), and compared with CSV files downloaded earlier by hand from the same page. Read back with the pipeline's parser, the PM2.5 values equal the hand-downloaded files for Cork, Rathmines, Kilmainham, Limerick and Waterford (same hours, no different value). Galway differs by one hour only because the hand-downloaded windows were cut at different dates near the end. Kilmainham's last window (July-December 2025) has no readings: the site answers "No data found for this station and date range", which the script reports and does not save. The script does not write the empty `HH:01:00` padding rows that the browser's CSV contains, and writes missing values as empty cells. The site says its data are not validated.
+
+```python
+# src/download_epa.py
+WINDOW_DAYS = 183          # days per request (end = start + 182 days)
+
+def windows(start: date, end: date):
+    """Yield (window_start, window_end) pairs of WINDOW_DAYS days, from `start` to `end`.
+
+    Windows follow each other with no gap and no overlap; the last one stops at `end`.
+    """
+    current = start
+    while current <= end:
+        window_end = min(current + timedelta(days=WINDOW_DAYS - 1), end)
+        yield current, window_end
+        current = window_end + timedelta(days=1)
+```
+
+### Station metadata
+
+`download_source_metadata.py` sends the request that the EEA Air Quality Viewer's "Download CSV" button sends (https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements). The page posts the chosen Country filter to `.../AQViewer/download?fqn=Airquality_Dissem.b2g.measurements&f=csv` and the server answers with a zip file holding `DataExtract.csv`. The script does this for Denmark, Spain, France, the United Kingdom, Greece and Ireland (the countries of `station_reference.csv`) and saves each table, unchanged, as `metadata/source_metadata/<country>.csv` (`uk.csv` for the United Kingdom). These tables are where the station IDs, coordinates and station types in `station_reference.csv` come from; no pipeline script reads them. Unlike the raw data, they are kept in git.
+
+Tested against the files saved from the viewer by hand: `denmark.csv` and `greece.csv` are byte-for-byte identical. The other four are larger or updated: with only the Country filter the viewer returns every row (for example Spain is about 18 MB, because it includes every pollutant; the hand-saved file had been narrowed to PM2.5), and `uk.csv` has the same 11,742 rows with different text in 994 rows of two columns (Measurement Equipment and Sampling Method). For all 17 stations the PM2.5 latitude and longitude in the new tables equal those in `station_reference.csv`.
+
+### Source notes
+
+**Timestamps.** EEA hourly files are converted to UTC+1 for every country, while EEA daily files are not. EPA files are hour-ending (inferred from the data, not documented), so the pipeline shifts them back one hour. UK-AIR's `.RData` files already label the start of the hour in UTC, so nothing is shifted.
+
+**EEA station codes and metadata.** The Parquet files contain no station names, only a sampling-point code. For Denmark, France and Greece it contains the EU id (SPO-DK0034A_06001_104 is Copenhagen, DK0034A). The Spanish files use Spain's national code instead (SP_28079038_9_47 is Cuatro Caminos, ES1525A). Section 9 lists both codes.  For any new cities or stations added you will need to figure out the station id yourself. The full mapping is in metadata/station_reference.csv (columns station_id and source_download_id).
 
 You can find the full EEA metadata and filter by country here https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements to find its unique id under EoI code and Nat code. This metadata also displays latitude/longitude and other relevant info and can be downloaded into CSV files. 
 Even for station data downloaded from UKAir and EPA Ireland, it is recommended to download the EEA metadata CSV for the relevant country to get a consistent EU station id for each station, as well as other important metadata. This is due to its metadata generally being more complete and clear than EPA Ireland/AirQuality.ie in particular.
 
 Alternatively this metadata can be found by checking each station in the city on this interactive map - https://www.eea.europa.eu/en/analysis/maps-and-charts/index . Click on the dot and then Show details. Beside the station name will be its unique EEA id. You can find longitude/latitude by clicking view station location which will bring you to its exact location on Google Maps.
 
-
-- EPA Ireland (format CSV, downloaded from airquality.ie):
-
-1. Go to this url: https://airquality.ie/readings
-2. Select each station and repeat - Rathmines, Kilmainham, University College Cork, People’s Park Limerick, Paddy Browne’s Road Waterford, Briarhill Co. Galway (close to Galway city, data only available from December 2022).
-3. Change from and to dates. Start with January 2022 and go up in 6-month increments. If any stations are missing PM2.5 data start at the earliest date that station does have PM2.5 data for. 
-4. Click on the 3 bars beside the diagram and download the CSV file for each 6-month increment up to the date you wish to end (31/12/2025 recommended. Keep 2026 for new data).
-
-Note: Irish stations have only two years of training data (2022–2023), providing substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This is a known limitation caused by the lack of earlier hourly PM2.5 data for the selected Irish stations. The effect of this limitation on model performance will be evaluated empirically. 
+**EPA Ireland.** Note: Irish stations have only two years of training data (2022–2023), providing substantially less temporal depth for time-aware cross-validation than the non-Irish stations. This is a known limitation caused by the lack of earlier hourly PM2.5 data for the selected Irish stations. The effect of this limitation on model performance will be evaluated empirically. 
 
 You can find the easting/northing for each station at the bottom of the station page, e.g. https://airquality.ie/station/EPA-59 . This will need to be converted to latitude/longitude. Recommended to simply use the EEA metadata instead.
 
+**What was and was not tested.** Each script was run against the live source and compared with files downloaded earlier by hand (above). Run from an empty `raw_data/` folder (the download scripts create the folders), the pipeline reproduces the numbers in this document. Not tested: data for 2026.
+
+---
 
 ## Timestamp conventions used by the pipeline:
 
 | Source | Label | Time zone | Action |
 | :--- | :--- | :--- | :--- |
 | EEA hourly | interval start | UTC+1 (EEA converts) | −1 h |
-| UK-AIR | hour ending | GMT | −1 h |
+| UK-AIR (`.RData`) | interval start | UTC | none |
 | EPA | hour ending | UTC (both inferred) | −1 h |
 
 ---
@@ -791,7 +898,7 @@ def assign_splits(df: pd.DataFrame, train_start_year: pd.Series) -> pd.Series:
 ```
 
 ![Terminal output of create_splits.py with row counts per split, the leakage check and held-out rows per station](docs/images/08_create_splits_output.png)
-*After running `python src/create_splits.py`: rows per split (train 123,364; dev 31,192; test 25,921; held_out_test 13,362; excluded 91,712), the leakage check, and the held-out test rows per station.*
+*After running `python src/create_splits.py`: rows per split (train 123,399; dev 31,192; test 25,944; held_out_test 13,362; excluded 164,245), the leakage check, and the held-out test rows per station.*
 
 ![Terminal listing of processed_data/features showing pm25_features.parquet and pm25_features_with_splits.parquet](docs/images/09_create_splits_file.png)
 *`create_splits.py` saves `pm25_features_with_splits.parquet` next to `pm25_features.parquet`: the same rows plus a `split` column.*
@@ -894,11 +1001,11 @@ def add_lag_rolling_and_target(df: pd.DataFrame) -> pd.DataFrame:
     return df
 ```
 
-![Terminal output of feature_extraction.py showing 33240 rows dropped and 285551 rows saved](docs/images/07_feature_extraction_output.png)
-*After running `python src/feature_extraction.py`: 33,240 rows without a full history or a valid target are dropped, leaving 285,551 feature rows.*
+![Terminal output of feature_extraction.py showing 42469 rows dropped and 358142 rows saved](docs/images/07_feature_extraction_output.png)
+*After running `python src/feature_extraction.py`: 42,469 rows without a full history or a valid target are dropped, leaving 358,142 feature rows.*
 
 ![Terminal listing of processed_data/features showing pm25_features.parquet](docs/images/06_feature_extraction_file.png)
-*`processed_data/features/pm25_features.parquet` (285,551 rows, 22 columns) is created.*
+*`processed_data/features/pm25_features.parquet` (358,142 rows, 22 columns) is created.*
 
 ---
 
@@ -919,7 +1026,7 @@ The project contains several types of structured/time-series data.
 | Timestamp | Time-series/time data | timezone-aware datetime |
 | Valid Hours | Discrete numerical | integer 0-3 |
 | Raw EPA data | Structured tabular | CSV |
-| Raw UK-AIR data | Structured tabular | CSV |
+| Raw UK-AIR data | Structured tabular | RData (R data file) |
 | Raw EEA data | Structured time-series | Parquet |
 | Processed data | Structured time-series | Parquet |
 | Collection manifest | Semi-structured metadata | JSONL |
@@ -933,7 +1040,7 @@ For example, PM2.5 is numerical time-series data, while Parquet is a storage for
 
 # 9. Reproducibility of Data Collection — 1.0 point
 
-Though the scripts are not completed yet, data collection will eventually be automated through version-controlled Python ingestion scripts.
+Data collection is automated through version-controlled Python download scripts: one per source for the raw data, and one for the station metadata (Section 5, "Download scripts").
 
 The collection configuration will specify:
 
@@ -990,6 +1097,8 @@ PM2.5 data for:
 
 **2018–2025**
 
+The EEA download API ignores date filters, so the downloaded files hold each station's complete series (from 2013 for most stations, to the end of 2025). 2018–2025 is the study period; the rows before 2018 (236,261 rows of the canonical table) are labelled `excluded` by `create_splits.py` and can be trimmed in Milestone 2.
+
 Exact station candidates were initially chosen by manual analysis of their suitability based on a combination of location, prioritising large cities, and sufficient available historical data. This decision was initially made prior to ingestion. After analysing the files, it was determined that Milan's 2 stations, London Westminster, and Athens Lykovrisi were lacking the required data to make them viable candidates. Thus, they were replaced by 2 Madrid stations, London N. Kensington, and Athens Aristotelous. All other original candidates were retained.
 
 Every collection run (each run of upload_raw_data.py) records:
@@ -1006,9 +1115,9 @@ Every collection run (each run of upload_raw_data.py) records:
 
 This means another student can rerun the collection code using the documented configuration and identify exactly which source files were used.
 
-Until the download scripts are completed, the download step is manual (guides in Section 5). The rest of collection is scripted: the downloaded files are placed under `raw_data/<source>/<raw_folder>/` (the `raw_folder` column of `metadata/station_reference.csv`) and uploaded by `upload_raw_data.py` (Section 1), which writes the manifest record above. `metadata/station_reference.csv` also holds the station selection listed above in machine-readable form and is read by every pipeline script (Section 10, Station mapping).
+Collection is fully scripted: the files saved by the download scripts (Section 5) are placed under `raw_data/<source>/<raw_folder>/` (the `raw_folder` column of `metadata/station_reference.csv`) and uploaded by `upload_raw_data.py` (Section 1), which writes the manifest record above. `metadata/station_reference.csv` also holds the station selection listed above in machine-readable form and is read by every pipeline script (Section 10, Station mapping).
 
-The ingestion scripts will not manually edit the downloaded source files.
+The download scripts save each file as received, never edit an existing file and skip files that already exist. The one exception to "as received" is EPA: its script converts the chart data in the page into a CSV, because the site offers no CSV file to fetch.
 
 A requirements.txt file will also be included to streamline and simplify any necessary installations. Note that torch and google-cloud-bigquery will be included in requirements.txt, even though the decision has not yet been made on whether these will be implemented. They are currently commented out for this reason as are some M4 requirements.
 
@@ -1054,7 +1163,7 @@ Write versioned Parquet datasets
 
 ### Code overview and run order
  
-Step 1 (downloading) is currently manual (Section 5); the download scripts are still in development and are not part of this milestone. The scripts in `src/` run in this order:
+Step 1 (downloading) is done by the download scripts (Section 5). After them, the scripts in `src/` run in this order:
  
 | Order | Script | What it does | Why it is included |
 |---|---|---|---|
@@ -1073,6 +1182,10 @@ Supporting files used by every script: `config.py` (folder paths, pipeline versi
 To run the pipeline from the repository root (steps 1 and 7 need `GCP_PROJECT_ID` and `GCS_BUCKET_NAME` set as environment variables and Google Cloud application-default credentials):
  
 ```
+python src/download_ukair.py
+python src/download_eea.py
+python src/download_epa.py
+python src/download_source_metadata.py
 python src/upload_raw_data.py
 python src/canonicalize_raw_data.py
 python src/validate_data_quality.py
@@ -1140,27 +1253,26 @@ Source timestamps will be converted into a consistent time representation before
 Time-zone handling will be explicitly recorded because the project uses measurements from multiple countries.
 Source timestamps will be preserved exactly as provided in the raw data. EEA hourly data is preserved in UTC+1. During canonicalisation, the timestamp convention and timezone/offset associated with each source will be recorded. A consistent timezone representation will then be used for temporal alignment and aggregation, with daylight-saving transitions handled explicitly.
 
-In `canonicalize_raw_data.py` every source is converted to the same convention: hourly timestamps in UTC, labelled by the start of the hour. UK-AIR and EPA files are labelled by the end of the hour and EEA hourly files are labelled in UTC+1, so one hour is subtracted in each case. UK-AIR writes the last hour of each day as `24:00`, which is handled by adding the clock time to the date as a duration.
+In `canonicalize_raw_data.py` every source is converted to the same convention: hourly timestamps in UTC, labelled by the start of the hour. EPA files are labelled by the end of the hour and EEA hourly files are labelled in UTC+1, so one hour is subtracted in each case. UK-AIR's `.RData` files already label the start of the hour in UTC (the date is a number of seconds since 1970), so nothing is subtracted.
 
 ```python
 # src/canonicalize_raw_data.py
 # Timestamp conventions. A row stamped 09:00 under "hour ending" covers
 # 08:00-09:00; we shift to interval-START so all sources match.
-UKAIR_TIMESTAMPS_ARE_HOUR_ENDING = True  # stated in every UK-AIR file header: "GMT hour ending"
+# UK-AIR (.RData): the date is already UTC and labels the START of the hour, so there is nothing to shift.
 EPA_TIMESTAMPS_ARE_HOUR_ENDING = True    # INFERRED, not documented: files start each day at 01:00.
 #   Could be confirmed by comparing with validated EEA data for the same station.
 # EEA: Start/End bound each hour (already interval-start) but the service
 # labels them UTC+1 for every country, so we subtract 1h to reach true UTC.
 EEA_LABEL_UTC_OFFSET_HOURS = 1
- 
-# UK-AIR labels each day's last hour "24:00", which datetime parsing rejects,
-# so build the timestamp as (date at midnight) + (HH:MM as a duration);
-# "24:00" then correctly becomes the next day's 00:00.
-day = pd.to_datetime(df[date_col].astype(str), format="%d-%m-%Y", errors="coerce")
-clock = pd.to_timedelta(df[time_col].astype(str).str.strip() + ":00", errors="coerce")
-timestamp = day + clock
-if UKAIR_TIMESTAMPS_ARE_HOUR_ENDING:
-    timestamp = timestamp - pd.Timedelta(hours=1)
+
+# excerpt from parse_ukair_rdata_file()
+# the date is seconds since 1970 in UTC; a different type means the file format has changed
+if not pd.api.types.is_numeric_dtype(df["date"]):
+    raise ValueError(f"{path}: the 'date' column is {df['date'].dtype}, expected seconds since 1970.")
+out = pd.DataFrame({"timestamp_utc": pd.to_datetime(df["date"], unit="s", utc=True),
+                    "pm25": pd.to_numeric(df["PM2.5"], errors="coerce"),
+                    "sampling_point": path.name})
 ```
 
 ---
@@ -1296,7 +1408,7 @@ def aggregate_station(group: pd.DataFrame) -> pd.DataFrame:
 ```
 
 ![Terminal output of aggregate_to_3hour.py and a listing showing three_hour_aggregated.parquet](docs/images/05_aggregate_to_3hour_output.png)
-*After running `python src/aggregate_to_3hour.py`: 318,791 three-hour blocks are produced and `processed_data/three_hour_aggregated.parquet` is created.*
+*After running `python src/aggregate_to_3hour.py`: 400,611 three-hour blocks are produced and `processed_data/three_hour_aggregated.parquet` is created.*
 
 ---
 
@@ -1573,7 +1685,7 @@ These decisions will be made using the training/development data and documented 
 
 ## Running the pipeline on your own Google Cloud bucket
 
-This guide takes you from a fresh computer to a finished run of the pipeline, with the data uploaded to your own Google Cloud Storage bucket. The download scripts are not used: the raw files are downloaded by hand, as described in Section 5.
+This guide takes you from a fresh computer to a finished run of the pipeline, with the data uploaded to your own Google Cloud Storage bucket. The raw data are not in the repository (`raw_data/` is in `.gitignore`); the download scripts (Section 5) fetch them in Step 4.
 
 **Which terminal am I using?** The few commands that differ between terminals are given twice, once for **PowerShell** and once for **bash** (Git Bash on Windows, the macOS Terminal, Linux, or WSL). Use the block that matches your terminal:
 - PowerShell: the prompt starts with `PS C:\...>`.
@@ -1581,7 +1693,7 @@ This guide takes you from a fresh computer to a finished run of the pipeline, wi
 
 If a command fails with "command not found", you are probably typing the other kind of command. The `git`, `python`, `pip` and `gcloud` commands are the same in both.
 
-### Step 0 — Get the code and the raw data ready
+### Step 0 — Get the code
 
 **0.1 Install Python and Git (once).**
 - Python 3.10 or newer, from python.org. On Windows, tick "Add python.exe to PATH" in the installer.
@@ -1593,185 +1705,9 @@ If a command fails with "command not found", you are probably typing the other k
 git clone <repository URL>
 cd dh-PM2.5-forecast
 ```
-The folder is named after the repository. It contains the scripts (`src/`), `metadata/station_reference.csv` and `requirements.txt`. It does not contain the raw data: you download that in 0.3. If your copy already has a `raw_data/` folder full of files, skip to 0.6.
+The folder is named after the repository. It contains the scripts (`src/`), `metadata/station_reference.csv` and `requirements.txt`. It does not contain the raw data: `raw_data/` is in `.gitignore`, and the download scripts fetch the data in Step 4, once Python is set up.
 
-**0.3 Download the raw data.** Follow the "Manual raw data download guide" in Section 5 and let the files save to your Downloads folder as normal. When you have finished, you should have:
-
-| Source | What you should have downloaded | What the files look like |
-|---|---|---|
-| UK-AIR | 8 yearly CSVs (2018–2025) for each of London N. Kensington, London Bloomsbury, Belfast Centre and Derry: 32 files | Site code, underscore, year: `KC1_2018.csv`, `BEL2_2018.csv` |
-| EEA | One download for Denmark, France, Greece and Spain, as a zip. Unzip it. | Many `.parquet` files, one per sampling point, covering every station in the selected cities. The station code is in the name: `SPO-GR0003A_06001_100.parquet`, `SP_28079038_9_47.parquet` |
-| EPA | For each of the 6 Irish stations, one CSV per six-month period from January 2022 to December 2025 (about 8 per station) | Named only by date range: `010122-020722.csv`. **The name does not say which station the file is for.** |
-
-**0.4 Create the folders.** The scripts find each file by the folder it sits in, so the folder names must match exactly, capital letters included. Inside the repository folder you should end up with this:
-```
-dh-PM2.5-forecast/
-├── src/                                  (the scripts)
-├── metadata/station_reference.csv        (already in the repository)
-└── raw_data/                             (you create this)
-    ├── epa/
-    │   ├── cork/
-    │   ├── dublin/
-    │   │   ├── dublinKilmainham/
-    │   │   └── dublinRathmines/
-    │   ├── galway/
-    │   ├── limerick/
-    │   └── waterford/
-    ├── uk_air/
-    │   ├── belfast/
-    │   ├── derry/
-    │   └── london/
-    │       ├── londonBloomsbury/
-    │       └── londonKensington/
-    └── eea/
-        ├── athens/
-        │   ├── athensAristotelous/
-        │   └── athensParaskevi/
-        ├── copenhagen/
-        ├── madrid/
-        │   ├── madridCuatroCaminos/
-        │   └── madridEscuelasAguirre/
-        └── paris/
-            ├── parisGennevilliers/
-            └── parisSaintDenis/
-```
-To create all 17 folders at once, run this from the repository folder.
-
-PowerShell:
-```
-New-Item -ItemType Directory -Force -Path @(
-  "raw_data\epa\cork",
-  "raw_data\epa\dublin\dublinKilmainham",
-  "raw_data\epa\dublin\dublinRathmines",
-  "raw_data\epa\galway",
-  "raw_data\epa\limerick",
-  "raw_data\epa\waterford",
-  "raw_data\uk_air\belfast",
-  "raw_data\uk_air\derry",
-  "raw_data\uk_air\london\londonBloomsbury",
-  "raw_data\uk_air\london\londonKensington",
-  "raw_data\eea\athens\athensAristotelous",
-  "raw_data\eea\athens\athensParaskevi",
-  "raw_data\eea\copenhagen",
-  "raw_data\eea\madrid\madridCuatroCaminos",
-  "raw_data\eea\madrid\madridEscuelasAguirre",
-  "raw_data\eea\paris\parisGennevilliers",
-  "raw_data\eea\paris\parisSaintDenis"
-) | Out-Null
-```
-
-bash:
-```
-mkdir -p raw_data/epa/cork raw_data/epa/dublin/dublinKilmainham raw_data/epa/dublin/dublinRathmines \
-  raw_data/epa/galway raw_data/epa/limerick raw_data/epa/waterford \
-  raw_data/uk_air/belfast raw_data/uk_air/derry raw_data/uk_air/london/londonBloomsbury \
-  raw_data/uk_air/london/londonKensington \
-  raw_data/eea/athens/athensAristotelous raw_data/eea/athens/athensParaskevi raw_data/eea/copenhagen \
-  raw_data/eea/madrid/madridCuatroCaminos raw_data/eea/madrid/madridEscuelasAguirre \
-  raw_data/eea/paris/parisGennevilliers raw_data/eea/paris/parisSaintDenis
-```
-
-**0.5 Put each file in its station's folder.**
-
-| Station | Folder inside `raw_data/` | Which files go there |
-|---|---|---|
-| Dublin Rathmines | `epa/dublin/dublinRathmines` | The EPA CSVs you downloaded for Rathmines |
-| Dublin Kilmainham | `epa/dublin/dublinKilmainham` | The EPA CSVs you downloaded for Kilmainham |
-| Cork UCC | `epa/cork` | The EPA CSVs you downloaded for University College Cork |
-| Limerick People's Park | `epa/limerick` | The EPA CSVs you downloaded for People's Park |
-| Waterford Paddy Browne's Road | `epa/waterford` | The EPA CSVs you downloaded for Paddy Browne's Road |
-| Galway Briarhill | `epa/galway` | The EPA CSVs you downloaded for Briarhill |
-| Belfast Centre | `uk_air/belfast` | Files with `BEL2_` in the name |
-| Derry Rosemount | `uk_air/derry` | Files with `DERR_` in the name |
-| London Bloomsbury | `uk_air/london/londonBloomsbury` | Files with `CLL2_` in the name |
-| London N. Kensington | `uk_air/london/londonKensington` | Files with `KC1_` in the name |
-| Athens Agia Paraskevi | `eea/athens/athensParaskevi` | `.parquet` files with `GR0039A` in the name |
-| Athens Aristotelous | `eea/athens/athensAristotelous` | `.parquet` files with `GR0003A` in the name |
-| Copenhagen | `eea/copenhagen` | `.parquet` files with `DK0034A` in the name (two files, `_100` and `_104`) |
-| Madrid Cuatro Caminos | `eea/madrid/madridCuatroCaminos` | `.parquet` files with `28079038` in the name |
-| Madrid Escuelas Aguirre | `eea/madrid/madridEscuelasAguirre` | `.parquet` files with `28079008` in the name |
-| Paris Gennevilliers | `eea/paris/parisGennevilliers` | `.parquet` files with `FR04002` in the name |
-| Paris Saint-Denis | `eea/paris/parisSaintDenis` | `.parquet` files with `FR04058` in the name |
-
-You can drag and drop in File Explorer, or use these commands from the repository folder.
-
-*UK-AIR* (the site code is in each file name, so one command per station moves them all):
-
-PowerShell:
-```
-$dl = "$HOME\Downloads"
-Move-Item "$dl\*KC1_*.csv"  "raw_data\uk_air\london\londonKensington\"
-Move-Item "$dl\*CLL2_*.csv" "raw_data\uk_air\london\londonBloomsbury\"
-Move-Item "$dl\*BEL2_*.csv" "raw_data\uk_air\belfast\"
-Move-Item "$dl\*DERR_*.csv" "raw_data\uk_air\derry\"
-```
-
-bash:
-```
-dl=~/Downloads
-mv "$dl"/*KC1_*.csv  raw_data/uk_air/london/londonKensington/
-mv "$dl"/*CLL2_*.csv raw_data/uk_air/london/londonBloomsbury/
-mv "$dl"/*BEL2_*.csv raw_data/uk_air/belfast/
-mv "$dl"/*DERR_*.csv raw_data/uk_air/derry/
-```
-
-*EEA* (this copies rather than moves, because the unzipped folder also holds files for stations the project does not use; replace the folder name with the one you unzipped):
-
-PowerShell:
-```
-$eea = "$dl\<name of the unzipped EEA folder>"
-Get-ChildItem $eea -Recurse -Filter "*GR0039A*.parquet"  | Copy-Item -Destination "raw_data\eea\athens\athensParaskevi\"
-Get-ChildItem $eea -Recurse -Filter "*GR0003A*.parquet"  | Copy-Item -Destination "raw_data\eea\athens\athensAristotelous\"
-Get-ChildItem $eea -Recurse -Filter "*DK0034A*.parquet"  | Copy-Item -Destination "raw_data\eea\copenhagen\"
-Get-ChildItem $eea -Recurse -Filter "*28079038*.parquet" | Copy-Item -Destination "raw_data\eea\madrid\madridCuatroCaminos\"
-Get-ChildItem $eea -Recurse -Filter "*28079008*.parquet" | Copy-Item -Destination "raw_data\eea\madrid\madridEscuelasAguirre\"
-Get-ChildItem $eea -Recurse -Filter "*FR04002*.parquet"  | Copy-Item -Destination "raw_data\eea\paris\parisGennevilliers\"
-Get-ChildItem $eea -Recurse -Filter "*FR04058*.parquet"  | Copy-Item -Destination "raw_data\eea\paris\parisSaintDenis\"
-```
-
-bash:
-```
-eea="$dl/<name of the unzipped EEA folder>"
-find "$eea" -name "*GR0039A*.parquet"  -exec cp {} raw_data/eea/athens/athensParaskevi/ \;
-find "$eea" -name "*GR0003A*.parquet"  -exec cp {} raw_data/eea/athens/athensAristotelous/ \;
-find "$eea" -name "*DK0034A*.parquet"  -exec cp {} raw_data/eea/copenhagen/ \;
-find "$eea" -name "*28079038*.parquet" -exec cp {} raw_data/eea/madrid/madridCuatroCaminos/ \;
-find "$eea" -name "*28079008*.parquet" -exec cp {} raw_data/eea/madrid/madridEscuelasAguirre/ \;
-find "$eea" -name "*FR04002*.parquet"  -exec cp {} raw_data/eea/paris/parisGennevilliers/ \;
-find "$eea" -name "*FR04058*.parquet"  -exec cp {} raw_data/eea/paris/parisSaintDenis/ \;
-```
-
-*EPA* (the file names do not identify the station, so sort these as you go): download one station at a time, and drag its files into that station's folder before you download the next station. If all the CSVs are already mixed together in Downloads, open each one to see which station it is before filing it.
-
-Rules for all files:
-- Keep the files exactly as downloaded. Do not rename, edit, merge, or open and re-save them (in Excel, for example): the raw files must stay unchanged.
-- Do not leave extra files in `raw_data/`: no merged CSVs, no duplicate copies such as `KC1_2018 (1).csv`, and no folders for stations the project does not use.
-- The pipeline catches most misplaced files, but not all:
-  - A file in a folder that is not in the structure above stops the run, and the message names the file.
-  - A UK-AIR file in the wrong station's folder stops the run, because the station name inside each file is checked.
-  - An EEA file in the wrong station's folder stops the run. An EEA file for a station the project does not use is skipped with a warning.
-  - EPA files are the exception: they do not contain the station name. A misplaced EPA file is caught only if it overlaps, and disagrees with, another file for the same station (the run then stops with "DIFFERENT PM2.5 values"). Check the EPA folders by hand.
-
-**0.6 Check the result.** From the repository folder:
-
-PowerShell:
-```
-Get-ChildItem raw_data -Recurse -File | Group-Object DirectoryName | Select-Object Count, Name | Format-Table -AutoSize
-(Get-ChildItem raw_data -Recurse -File).Count
-```
-
-bash (the first line prints the total, the loop prints the file count of each folder):
-```
-find raw_data -type f | wc -l
-for d in $(find raw_data -type d | sort); do n=$(find "$d" -maxdepth 1 -type f | wc -l); [ "$n" -gt 0 ] && echo "$n  $d"; done
-```
-You should see 17 folders. In the project's own dataset:
-- Each UK-AIR folder holds 8 files.
-- The EPA folders hold 8 files each, except Kilmainham and Galway with 7 (Kilmainham has no data after 29 January 2025, and Galway starts in December 2022).
-- Each EEA folder holds 1 file, except Copenhagen with 2.
-- The total is 86 files (46 EPA + 32 UK-AIR + 8 EEA).
-
-Note the total: the upload in Step 7 prints the same number. Differences are fine if you downloaded a different date range, but every folder must contain files.
+**0.3 The raw data.** Nothing to do yet. The data are downloaded in Step 4, after the Python environment exists. You do not need to create the `raw_data/` folders: the download scripts create them (the structure is shown in Section 5, "Download scripts").
 
 ### Step 1 — Create a Google Cloud project
 
@@ -1814,6 +1750,37 @@ pip install -r requirements.txt
 ```
 On macOS, Linux and WSL the activate script is `source .venv/bin/activate` and the Python command is `python3`. When the environment is active, the prompt starts with `(.venv)`.
 
+**Download the raw data.** With the environment active, run the download scripts from the repository folder (Section 5). They create the `raw_data/` folders themselves and skip files that already exist, so they can be re-run after an interruption (the EPA download is the slowest, about 10 minutes):
+
+```
+python src/download_ukair.py
+python src/download_eea.py
+python src/download_epa.py
+python src/download_source_metadata.py
+```
+
+From the repository folder, check the result:
+
+PowerShell:
+```
+Get-ChildItem raw_data -Recurse -File | Group-Object DirectoryName | Select-Object Count, Name | Format-Table -AutoSize
+(Get-ChildItem raw_data -Recurse -File).Count
+```
+
+bash (the first line prints the total, the loop prints the file count of each folder):
+```
+find raw_data -type f | wc -l
+for d in $(find raw_data -type d | sort); do n=$(find "$d" -maxdepth 1 -type f | wc -l); [ "$n" -gt 0 ] && echo "$n  $d"; done
+```
+You should see 17 folders:
+- Each UK-AIR folder holds 8 files (`.RData`).
+- The EPA folders hold 8 files each, except Kilmainham and Galway with 7 (Kilmainham has no data after 29 January 2025, and Galway starts in December 2022).
+- Each EEA folder holds 1 file (`.parquet`), except Copenhagen with 2.
+- The total is 86 files (46 EPA + 32 UK-AIR + 8 EEA).
+
+The upload in Step 7 prints the same total. Keep the files exactly as the scripts saved them: do not rename, edit or merge them, and do not add other files or folders to `raw_data/`.
+
+
 ### Step 5 — Tell the scripts your project ID and bucket name
 
 The scripts need your project ID (Step 1) and your bucket name (Step 3). They read them from two **environment variables**: named settings that a terminal window holds and hands to every program you start from that window.
@@ -1844,7 +1811,7 @@ Check that they are set, in the same window. It should print your value (nothing
 ### Step 6 — Final check before running
 
 - Run `git status` and commit anything pending, otherwise the manifest records the commit as `-dirty` (harmless but untidy).
-- Make sure `raw_data/` still holds the file count from Step 0.6.
+- Make sure `raw_data/` still holds the file count from Step 4.
 
 ### Step 7 — Run the pipeline
 
@@ -1868,16 +1835,16 @@ Steps 2–6 of this list run entirely on your own machine and do not need Google
   - `Counts match.`
 - **canonicalize:**
   - `Coverage: 17 / 17 stations`
-  - `Saved 943899 canonical hourly rows`
+  - `Saved 1180226 canonical hourly rows`
 - **validate:**
   - Four lines ending "OK".
   - `5 expected station-year(s) below 75%`: Kilmainham 2025, Bloomsbury 2021 and 2022, Copenhagen 2021 and 2025. They are flagged, not removed.
-  - 5,663 negative values.
+  - 5,666 negative values.
   - 7 values above 500.
-- **aggregate:** `318791 3-hour blocks, 19701 failed the 2/3-hour rule`
-- **features:** `285551 remain`, 22 columns
+- **aggregate:** `400611 3-hour blocks, 24666 failed the 2/3-hour rule`
+- **features:** `358142 remain`, 22 columns
 - **splits:**
-  - train 123,364, dev 31,192, test 25,921, held_out_test 13,362 and excluded 91,712.
+  - train 123,399, dev 31,192, test 25,944, held_out_test 13,362 and excluded 164,245.
   - `Leakage check passed`
   - Held-out rows per station: FR04002=2,304, FR04058=2,734, GB0566A=2,892, GB0620A=2,880, GB1060A=2,552.
 - **store:** it uploads the canonical, 3-hour and feature tables, four split files and the station table, then `Manifest entry appended`. `No rows for split 'future_update' - skipping upload.` is normal, because there is no 2026 data yet.
@@ -1904,8 +1871,8 @@ gcloud storage cat gs://YOUR_BUCKET/manifests/dataset_versions.jsonl
 | `DefaultCredentialsError` | Run `gcloud auth application-default login`. |
 | `403` or `409` on the first upload call | The bucket name is probably taken by someone else, or your account lacks Storage Admin on the project. Try another name and check the project ID. |
 | Warning about a "quota project" | It is harmless. To silence it, run `gcloud auth application-default set-quota-project YOUR_PROJECT_ID`. |
-| `STOPPED - these files could not be used` | The message lists each file and the reason, usually a file in a folder that is not in the structure, or a UK-AIR or EEA file in the wrong station's folder (Step 0.5). |
-| `STOPPED: no usable data for selected station(s)` | A folder is missing, empty, or named differently from the structure in Step 0.4. |
+| `STOPPED - these files could not be used` | The message lists each file and the reason, usually a file in a folder that is not in the structure, or a UK-AIR or EEA file in the wrong station's folder. |
+| `STOPPED: no usable data for selected station(s)` | A folder is missing, empty, or named differently from the structure in Section 5, "Download scripts". |
 | `STOPPED: … DIFFERENT PM2.5 values` | Two files disagree for the same station and hour, often an EPA file in the wrong station's folder or the same download twice with edits. |
 | PowerShell will not run the activate script | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first. |
 
