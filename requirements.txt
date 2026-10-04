@@ -23,7 +23,11 @@ google-cloud-storage>=2.16
 
 # HTTP (for whichever sources end up automatable)
 requests>=2.31
+rdata>=1.1.0         # reads the UK-AIR .RData files (R data files)
 
 # M4 serving (not needed until the API/deployment stage)
 # fastapi>=0.110
 # uvicorn>=0.29
+
+# Linting (the project standard is `python -m pyflakes src/*.py` with no findings)
+pyflakes==4.0.2
