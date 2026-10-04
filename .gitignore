@@ -24,4 +24,10 @@ Thumbs.db
 # --- Raw downloads ---
 # Keep this line commented while raw_data/ is committed. Uncomment it if you
 # decide the downloads should live only in GCS (the manifest still records them).
-# raw_data/
+raw_data/
+metadata/source_metadata/
+
+# --- Claude ---
+CLAUDE.md
+docs/PROJECT_HISTORY.md
+drafts/
