@@ -21,18 +21,6 @@ HOW IT WORKS
     Unlike the other download scripts this one writes to metadata/source_metadata/, not to raw_data/,
     because the files describe the stations rather than measure anything.
 
-STATUS
-    [TESTED] Run against the live server for all six countries into a scratch folder. denmark.csv and
-        greece.csv are byte-for-byte identical to the files that had been saved from the viewer by hand. The
-        other four are larger or updated: france.csv, spain.csv and ireland.csv hold more rows than the
-        hand-saved files (those had been narrowed by further filters, for example Spain to PM2.5 only), and
-        uk.csv has the same 11,742 rows with different text in 994 rows of two columns (Measurement Equipment,
-        Sampling Method). For all 17 stations the PM2.5 latitude and longitude in the new files equal those in
-        station_reference.csv.
-    [RISK] The tables change when the EEA updates its reporting (the files say "report year 2025"). Existing
-        files are never refreshed, so delete a file to download a newer version; station_reference.csv would
-        then have to be checked against it. The country files are large (spain.csv is about 18 MB).
-
 Requires: pip install requests
 """
 import io
