@@ -70,6 +70,10 @@ def create_gcs_bucket(client, bucket_name: str, location: str = "EU") -> None:
     bucket = client.bucket(bucket_name)
     bucket.iam_configuration.uniform_bucket_level_access_enabled = True   # one access policy for the whole bucket
     bucket.versioning_enabled = True   # keep old generations when a file is re-uploaded
+    bucket.lifecycle_rules.add_delete_rule(
+        age=7,             #Number of days
+        is_live=False      #False means target only archived historical versions
+    )
     bucket = client.create_bucket(bucket, location=location)
     print(f"Created bucket: gs://{bucket.name}")
 
