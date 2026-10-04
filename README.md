@@ -1687,7 +1687,7 @@ mkdir -p raw_data/epa/cork raw_data/epa/dublin/dublinKilmainham raw_data/epa/dub
 | London N. Kensington | `uk_air/london/londonKensington` | Files with `KC1_` in the name |
 | Athens Agia Paraskevi | `eea/athens/athensParaskevi` | `.parquet` files with `GR0039A` in the name |
 | Athens Aristotelous | `eea/athens/athensAristotelous` | `.parquet` files with `GR0003A` in the name |
-| Copenhagen | `eea/copenhagen` | `.parquet` files with `DK0034A` in the name (three files; one is a daily file that the pipeline skips but keeps) |
+| Copenhagen | `eea/copenhagen` | `.parquet` files with `DK0034A` in the name (two files, `_100` and `_104`) |
 | Madrid Cuatro Caminos | `eea/madrid/madridCuatroCaminos` | `.parquet` files with `28079038` in the name |
 | Madrid Escuelas Aguirre | `eea/madrid/madridEscuelasAguirre` | `.parquet` files with `28079008` in the name |
 | Paris Gennevilliers | `eea/paris/parisGennevilliers` | `.parquet` files with `FR04002` in the name |
@@ -1768,8 +1768,8 @@ for d in $(find raw_data -type d | sort); do n=$(find "$d" -maxdepth 1 -type f |
 You should see 17 folders. In the project's own dataset:
 - Each UK-AIR folder holds 8 files.
 - The EPA folders hold 8 files each, except Kilmainham and Galway with 7 (Kilmainham has no data after 29 January 2025, and Galway starts in December 2022).
-- Each EEA folder holds 1 file, except Copenhagen with 3.
-- The total is 87 files (46 EPA + 32 UK-AIR + 9 EEA).
+- Each EEA folder holds 1 file, except Copenhagen with 2.
+- The total is 86 files (46 EPA + 32 UK-AIR + 8 EEA).
 
 Note the total: the upload in Step 7 prints the same number. Differences are fine if you downloaded a different date range, but every folder must contain files.
 
@@ -1863,11 +1863,10 @@ Steps 2–6 of this list run entirely on your own machine and do not need Google
 **What a correct run prints**, for the project's own dataset (the file counts and row counts differ if your files differ):
 - **upload:**
   - `Created bucket: gs://…`
-  - `87 new, 0 updated, 0 unchanged (skipped).`
-  - `Manifest updated: 87 total entries.`
+  - `86 new, 0 updated, 0 unchanged (skipped).`
+  - `Manifest updated: 86 total entries.`
   - `Counts match.`
 - **canonicalize:**
-  - It skips the daily Copenhagen file (`SPO-DK0034A_06001_103.parquet`).
   - `Coverage: 17 / 17 stations`
   - `Saved 943899 canonical hourly rows`
 - **validate:**
@@ -1893,7 +1892,7 @@ gcloud storage cat gs://YOUR_BUCKET/manifests/dataset_versions.jsonl
   - There is no `future_update/` or `models/` folder yet. Cloud Storage does not keep empty folders, so planned folders appear only once files go in.
   - The scripts do not upload `metadata/source_metadata/`. To add it, run `gcloud storage cp --recursive metadata/source_metadata gs://YOUR_BUCKET/metadata/`.
 - **Versioning:** in the Cloud Console, open Cloud Storage, then Buckets, then your bucket, then Protection. "Object versioning" should say Enabled.
-- **Skip logic:** run `python src/upload_raw_data.py` a second time. It should print `0 new, 0 updated, 87 unchanged (skipped)` and add no manifest lines.
+- **Skip logic:** run `python src/upload_raw_data.py` a second time. It should print `0 new, 0 updated, 86 unchanged (skipped)` and add no manifest lines.
 - **Re-running the store step:** this is safe. It appends one more manifest line, and the old copies of the files are kept by versioning.
 
 ### If something fails

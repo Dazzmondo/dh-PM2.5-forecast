@@ -1,5 +1,5 @@
 """
-Upload the manually downloaded raw files to GCS, mirroring raw_data/ into
+Upload the downloaded raw files to GCS, mirroring raw_data/ into
 gs://<bucket>/raw/ without changing them.
 
 INPUT:  raw_data/   (original source files only)

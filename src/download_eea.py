@@ -2,7 +2,7 @@
 download_eea.py - STEP 1 (data access): download the EEA hourly PM2.5 Parquet files.
 
 WHAT IT DOES
-    Automates the manual EEA download (Air Quality Download Service, PM2.5, verified data) for the
+    Downloads the EEA Air Quality Download Service files (PM2.5, verified data) for the
     seven EEA stations in metadata/station_reference.csv (rows with source == "eea").
       1. It asks the EEA download API for the list of verified PM2.5 Parquet files of the
          project's countries (one request to the "ParquetFile/urls" endpoint).
@@ -11,9 +11,8 @@ WHAT IT DOES
       3. It downloads each of them, keeps only files that hold HOURLY values (daily files are
          reported and not saved, because canonicalize_raw_data.py cannot use them), and saves
              raw_data/eea/<raw_folder>/<file name>.parquet
-         for example raw_data/eea/copenhagen/SPO-DK0034A_06001_104.parquet. That is the same folder
-         layout the manual guide uses. Files that already exist are skipped, so the manual
-         downloads are never overwritten.
+         for example raw_data/eea/copenhagen/SPO-DK0034A_06001_104.parquet. Files that already
+         exist are skipped, so an existing file is never overwritten.
     The API is the one behind the EEA web app (https://eeadmz1-downloads-webapp.azurewebsites.net):
     https://eeadmz1-downloads-api-appservice.azurewebsites.net, described in the EEA document
     "How to use Air Quality Downloads". Its robots.txt allows all access. No `airbase` package is
@@ -23,10 +22,10 @@ WHAT TO EXPECT IN THE FILES
     The "ParquetFile/urls" endpoint ignores date filters, so every file is the station's COMPLETE
     series held by the service, not only 2018-2025 (Copenhagen's SPO-DK0034A_06001_100.parquet
     starts in 2013). That is intended: trimming to 2018-2025 is left to a later step. Rows
-    before 2018 are labelled "excluded" by create_splits.py. The values on hours the manual files
-    share with these files are identical (tested).
+    before 2018 are labelled "excluded" by create_splits.py. The values on hours that these files
+    share with the EEA web app's download are identical (tested).
 
-    Only VERIFIED data (dataset 2, E1a) is downloaded, like the manual route. The "up-to-date"
+    Only VERIFIED data (dataset 2, E1a) is downloaded. The "up-to-date"
     dataset (dataset 1, E2a) is deliberately not used here: it is unverified and, for these
     stations, only holds 2026. It is the likely source for the 2026 update demo (a later milestone).
     Verified and up-to-date files of one sampling point have the SAME file name, so never save them
@@ -123,7 +122,7 @@ def main():
         for url in mine:
             name = url.split("/")[-1]
             dest = LOCAL_RAW_DIR / st.raw_folder / name
-            if dest.exists():   # re-runs skip files already downloaded (including the manual ones)
+            if dest.exists():   # re-runs skip files already downloaded
                 counts["skipped"] += 1
                 hourly_found.add(st.station_id)
                 continue

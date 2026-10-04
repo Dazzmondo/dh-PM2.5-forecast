@@ -1,5 +1,5 @@
 """
-Parse the three raw sources (EPA CSV, UK-AIR CSV, EEA Parquet) into ONE
+Parse the three raw sources (EPA CSV, UK-AIR RData, EEA Parquet) into ONE
 common hourly schema, keyed on station_id (the EU/EIONET code).
 
 INPUT:  raw_data/epa/, raw_data/uk_air/, raw_data/eea/   (original downloads)
@@ -12,9 +12,9 @@ What it does
 2. Converts timestamps to UTC and labels each hour by its START. The
    convention of each source is stated next to the constants further down.
 3. Applies the source quality rules:
-   - UK-AIR: uses the single "PM2.5 particulate matter" column (the files
-     also hold Volatile and Non-volatile fractions) and checks the site name
-     in the file header against the station the folder belongs to.
+   - UK-AIR: reads the hourly table of each .RData file (an R data file, as
+     fetched by download_ukair.py), uses its single "PM2.5" column and checks
+     the site name in the file against the station the folder belongs to.
    - EEA: keeps rows whose Validity flag is 1, 2 or 3; other rows become
      missing. Files that are not hourly (AggType other than "hour") are
      skipped with a message.
@@ -31,14 +31,14 @@ FOLDER MAPPING. EPA and UK-AIR files don't contain the EU code, so each
 station's folder is declared in station_reference.csv (column raw_folder),
 relative to raw_data/<source>/. Folder names stay human-readable, e.g.
     raw_data/epa/dublin/dublinRathmines/…csv      -> IE0028A
-    raw_data/uk_air/london/londonBloomsbury/…csv  -> GB0566A
-    raw_data/uk_air/belfast/…csv                  -> GB0567A  (one station in the city)
-A CSV that sits in no mapped folder makes the run fail rather than being
-skipped quietly. EEA files name their station inside the file, so that is
+    raw_data/uk_air/london/londonBloomsbury/…RData -> GB0566A
+    raw_data/uk_air/belfast/…RData                -> GB0567A  (one station in the city)
+A CSV (EPA) or .RData (UK-AIR) file that sits in no mapped folder makes the run fail rather than
+being skipped quietly. EEA files name their station inside the file, so that is
 what identifies them; if an EEA file sits in a mapped folder but contains a
 DIFFERENT station, the run fails too (a misfiled download).
 
-Requires: pip install pandas pyarrow
+Requires: pip install pandas pyarrow rdata   (rdata reads the UK-AIR .RData files)
 """
 import re
 from pathlib import Path
@@ -53,7 +53,7 @@ OUTPUT_PATH = PROCESSED_DIR / "canonical_hourly.parquet"
 
 # Timestamp conventions. A row stamped 09:00 under "hour ending" covers
 # 08:00-09:00; we shift to interval-START so all sources match.
-UKAIR_TIMESTAMPS_ARE_HOUR_ENDING = True  # stated in every UK-AIR file header: "GMT hour ending"
+# UK-AIR (.RData): the date is already UTC and labels the START of the hour, so there is nothing to shift.
 EPA_TIMESTAMPS_ARE_HOUR_ENDING = True    # INFERRED, not documented: files start each day at 01:00.
 #   Could be confirmed by comparing with validated EEA data for the same station.
 # EEA: Start/End bound each hour (already interval-start) but the service
@@ -140,46 +140,42 @@ def parse_epa_file(path: Path) -> pd.DataFrame:
     return out.dropna(subset=["timestamp_utc"])   # drop rows whose date could not be read
 
 
-def parse_ukair_file(path: Path, expected_name_keyword: str) -> pd.DataFrame:
-    """Parse one UK-AIR "All Hourly Pollutant Data" CSV into rows of (timestamp_utc, pm25, sampling_point).
+def parse_ukair_rdata_file(path: Path, expected_name_keyword: str) -> pd.DataFrame:
+    """Parse one UK-AIR .RData file (an R data file, e.g. CLL2_2024.RData) into rows of
+    (timestamp_utc, pm25, sampling_point).
 
-    The file starts with a few lines of site information and then the data table: find where the
-    table starts, check the site name matches the station's folder, then read the table.
+    An .RData file stores R objects in binary form instead of text. Each file holds several data
+    frames (hourly data, 15-minute data, daily means, ...), named after the file, e.g. "CLL2_2024"
+    for the hourly table. What this function relies on:
+      - the time stamp is a number (seconds since 1 Jan 1970, UTC) and already marks the START of
+        the hour, so there is no "hour ending" shift and no "24:00" to repair;
+      - the table has one column called "PM2.5";
+      - the site name and code are columns of the table.
     """
-    raw_lines = path.read_text(errors="ignore").splitlines()   # plain text first, just to locate the table header
-    # line number of the table header ("Date,time,..."); everything above it is site information
-    header_idx = next((i for i, l in enumerate(raw_lines) if re.match(r"^Date,time", l, re.IGNORECASE)), None)
-    if header_idx is None:
-        raise ValueError(f"{path}: could not find a 'Date,time,...' header row.")
+    import warnings
 
-    # the site name sits on the line directly above the header row
-    site_line = raw_lines[header_idx - 1] if header_idx > 0 else ""
-    site_name = next((c.strip().strip('"') for c in site_line.split(",") if c.strip()), "")
-    if expected_name_keyword.lower() not in site_name.lower():
-        raise ValueError(f"{path}: file header says the site is {site_name!r} but this folder is for a "
+    import rdata   # imported here so the pipeline still runs without it when there are no .RData files
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")   # rdata warns that it has no special converter for R's date class; we convert it ourselves below
+        objects = rdata.read_rda(str(path))
+    df = objects.get(path.stem)   # the hourly table has the same name as the file without ".RData"
+    if df is None:
+        raise ValueError(f"{path}: expected an R object called {path.stem!r}, found {sorted(objects)}.")
+    for needed in ("date", "PM2.5", "site"):
+        if needed not in df.columns:
+            raise ValueError(f"{path}: expected a {needed!r} column, found {list(df.columns)}.")
+
+    site_names = {str(n) for n in df["site"].dropna().unique()}
+    if not any(expected_name_keyword.lower() in n.lower() for n in site_names) or len(site_names) != 1:
+        raise ValueError(f"{path}: the file says the site is {sorted(site_names)} but this folder is for a "
                          f"station whose name should contain {expected_name_keyword!r}. Wrong folder or wrong code?")
 
-    # skip the site-information lines, then read the table (odd characters are replaced rather than crashing)
-    df = pd.read_csv(path, skiprows=header_idx, encoding="utf-8", encoding_errors="replace")
-    clean = {c: strip_html_tags(c).strip().lower() for c in df.columns}   # tidy names, used only to find columns
-    date_col = _exactly_one([c for c, cl in clean.items() if cl == "date"], "'Date'", path, df.columns)
-    time_col = _exactly_one([c for c, cl in clean.items() if cl == "time"], "'time'", path, df.columns)
-    # NOT just "contains pm2.5": that also matches the Non-volatile / Volatile fractions.
-    pm_col = _exactly_one([c for c, cl in clean.items() if cl.startswith("pm2.5 particulate matter")],
-                          "'PM2.5 particulate matter'", path, df.columns)
-
-    # UK-AIR labels each day's last hour "24:00", which datetime parsing rejects,
-    # so build the timestamp as (date at midnight) + (HH:MM as a duration);
-    # "24:00" then correctly becomes the next day's 00:00.
-    day = pd.to_datetime(df[date_col].astype(str), format="%d-%m-%Y", errors="coerce")
-    clock = pd.to_timedelta(df[time_col].astype(str).str.strip() + ":00", errors="coerce")
-    timestamp = day + clock
-    if UKAIR_TIMESTAMPS_ARE_HOUR_ENDING:
-        timestamp = timestamp - pd.Timedelta(hours=1)
-    # UK-AIR times are GMT (= UTC, no daylight saving) and "hour ending"; the shift above has already
-    # moved them to hour starts, so only the UTC label is attached here
-    out = pd.DataFrame({"timestamp_utc": timestamp.dt.tz_localize("UTC"),
-                        "pm25": pd.to_numeric(df[pm_col], errors="coerce"),
+    # the date is seconds since 1970 in UTC; a different type means the file format has changed
+    if not pd.api.types.is_numeric_dtype(df["date"]):
+        raise ValueError(f"{path}: the 'date' column is {df['date'].dtype}, expected seconds since 1970.")
+    out = pd.DataFrame({"timestamp_utc": pd.to_datetime(df["date"], unit="s", utc=True),
+                        "pm25": pd.to_numeric(df["PM2.5"], errors="coerce"),
                         "sampling_point": path.name})
     return out.dropna(subset=["timestamp_utc"])
 
@@ -275,12 +271,13 @@ def main():
     stations = load_station_reference()
     frames, failures = [], []   # frames: one parsed table per file; failures: every problem found, reported together
 
-    # --- EPA and UK-AIR: CSV files, matched to stations by the folder they sit in ---
+    # --- EPA (CSV) and UK-AIR (.RData): matched to stations by the folder they sit in ---
     for source in ("epa", "uk_air"):
         src_stations = stations[stations.source == source].set_index("station_id")
         src_folders = src_stations["raw_folder"]   # station_id -> its folder
         folder = LOCAL_RAW_DIR / source
-        files = sorted(folder.rglob("*.csv")) if folder.exists() else []
+        pattern = "*.csv" if source == "epa" else "*.RData"   # the file type of each source
+        files = sorted(folder.rglob(pattern)) if folder.exists() else []
         for f in files:
             if "combined" in f.name.lower():   # a merged/derived file saved here by mistake; raw_data holds originals only
                 print(f"  Ignoring derived file in raw folder: {f}")
@@ -292,7 +289,7 @@ def main():
                 continue
             try:
                 parsed = (parse_epa_file(f) if source == "epa"
-                          else parse_ukair_file(f, src_stations.loc[sid, "source_name_check"]))
+                          else parse_ukair_rdata_file(f, src_stations.loc[sid, "source_name_check"]))
             except ValueError as e:
                 failures.append(str(e))
                 continue

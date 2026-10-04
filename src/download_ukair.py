@@ -8,7 +8,7 @@ WHAT IT DOES
         raw_data/uk_air/<raw_folder>/<code>_<year>.RData
     for example raw_data/uk_air/london/londonKensington/KC1_2024.RData.
     The files are R data files (see "WHY .RData" below). canonicalize_raw_data.py reads them
-    (parse_ukair_rdata_file) next to the CSV files of the manual download guide.
+    (parse_ukair_rdata_file).
 
 WHERE IT FITS IN THE PIPELINE
     download_ukair.py  ->  raw_data/uk_air/  ->  upload_raw_data.py (copies to GCS and
@@ -18,15 +18,16 @@ WHERE IT FITS IN THE PIPELINE
     deliberately NOT done here: upload_raw_data.py does it for the whole raw_data
     folder, so every file also gets a checksum and a manifest record.
 
-WHY .RData AND NOT THE CSV FILES OF THE MANUAL GUIDE
-    The CSV files live under https://uk-air.defra.gov.uk/datastore/, which UK-AIR's robots.txt
+WHY .RData AND NOT THE CSV FILES OF THE UK-AIR WEBSITE
+    The website's CSV files live under https://uk-air.defra.gov.uk/datastore/, which UK-AIR's robots.txt
     (https://uk-air.defra.gov.uk/robots.txt) disallows for automated clients ("Disallow:
     /datastore/"). Running a script against that path would ignore the rule, so this script
     does not do it. UK-AIR also publishes the same hourly data as .RData files for users of the
     R package "openair", under https://uk-air.defra.gov.uk/openair/R_data/. robots.txt does
     not disallow that path (it only names the interactive page /data/openair). The data are
     published under the Open Government Licence v3.0.
-    Checked against the manual CSV files (see STATUS): the same hours, the same values.
+    Compared with the website's CSV files for the same station-years: the same hours, and the
+    same values except 0.001 on 711 of 895,452 values (see the README, "Download scripts").
 
 Requires: pip install requests   (reading the files needs: pip install rdata)
 """
@@ -112,12 +113,9 @@ def main():
         for year in YEARS:
             # st.raw_folder, e.g. "london/londonKensington"; st.source_download_id, e.g. "KC1"
             dest = LOCAL_RAW_DIR / st.raw_folder / f"{st.source_download_id}_{year}.RData"
-            manual_csv = dest.with_suffix(".csv")
-            # A year that already exists (as .RData, or as a CSV from the manual guide) is skipped. The CSV
-            # case matters: the CSV and the .RData file of the same year differ in the last decimal for a
-            # few values (see canonicalize_raw_data.py), and the pipeline stops if both are present.
+            # A year that already exists is skipped.
             # RISK: an existing file is never refreshed (see the module docstring).
-            if dest.exists() or manual_csv.exists():
+            if dest.exists():
                 counts["skipped"] += 1
                 continue
             result = download_station_year(st.source_download_id, year, dest)

@@ -8,9 +8,8 @@ WHAT IT DOES
     out of the page, and saves them as a CSV in
         raw_data/epa/<raw_folder>/<station><ddmmyy>-<ddmmyy>.csv
     for example raw_data/epa/dublin/dublinRathmines/rathmines010122-020722.csv.
-    That is the same folder layout and file-name convention as the manual download guide, so
-    canonicalize_raw_data.py reads the files without changes. Files that already exist are
-    skipped, so the manual downloads are never overwritten.
+    canonicalize_raw_data.py reads these files. Files that already exist are skipped, so an
+    existing file is never overwritten.
 
 HOW airquality.ie WORKS (found with the browser's Network tab and then checked)
     https://airquality.ie/readings?station=EPA-21&dateFrom=01+Jan+2022&dateTo=02+Jul+2022
@@ -19,20 +18,19 @@ HOW airquality.ie WORKS (found with the browser's Network tab and then checked)
         name: 'PM<sub>2.5</sub>', ... data: [ [ Date.UTC(2022,0,4,20,0,0), 27 ], ... ]
     (JavaScript months start at 0.) There is no separate data request, which is why nothing from
     airquality.ie appears under the Network tab's Fetch/XHR filter. The "Download CSV" item in
-    the chart menu builds the manual CSV in the browser from this same data. This script does
-    the same: it turns the series into the manual CSV layout (a "Date and Time" column, then one
+    the chart menu builds a CSV in the browser from this same data. This script does
+    the same: it turns the series into that CSV layout (a "Date and Time" column, then one
     column per pollutant with the same HTML tags in the header).
 
 WINDOWS
-    The site accepts about six months per request. The manual files use windows of 183 days
-    (start + 182 days, for example 01 Jan 2022 to 02 Jul 2022, then 03 Jul 2022 to 01 Jan 2023),
-    so this script uses the same rule and the same file names.
+    The site accepts about six months per request. This script uses windows of 183 days
+    (start + 182 days, for example 01 Jan 2022 to 02 Jul 2022, then 03 Jul 2022 to 01 Jan 2023).
 
-HOW THE OUTPUT DIFFERS FROM THE MANUAL FILES
-    The values are identical (tested, see STATUS). The layout is not byte-identical: the browser
-    export pads missing hours with empty rows stamped HH:01:00, which this script does not write,
-    and missing values are written as empty cells. canonicalize_raw_data.py drops the padding
-    rows anyway. Neither the manual files nor these windows contain the 00:00 reading of a
+HOW THE OUTPUT DIFFERS FROM THE BROWSER'S "Download CSV"
+    The values are identical (tested). The layout is not byte-identical: the browser export
+    pads missing hours with empty rows stamped HH:01:00, which this script does not write, and
+    missing values are written as empty cells. canonicalize_raw_data.py drops padding rows
+    anyway. Neither the browser export nor these windows contain the 00:00 reading of a
     window's first day (the site starts each window at 01:00); canonicalize_raw_data.py would
     show that as one missing hour per window boundary.
 
@@ -56,7 +54,7 @@ LOCAL_RAW_DIR = RAW_DIR / "epa"
 # Last day to download. 2026 is deliberately not downloaded: it is reserved for the update demo.
 END_DATE = date(2025, 12, 31)
 
-WINDOW_DAYS = 183          # days per request; the manual files use exactly this (end = start + 182 days)
+WINDOW_DAYS = 183          # days per request (end = start + 182 days)
 MAX_RETRIES = 3            # tries per window before giving up
 RETRY_DELAY_SECONDS = 3    # pause between tries
 REQUEST_PAUSE_SECONDS = 2  # pause between windows, so the public server is not hammered
@@ -80,7 +78,7 @@ def windows(start: date, end: date):
 
 
 def file_name(prefix: str, start: date, end: date) -> str:
-    """Name a window file like the manual ones: prefix, start ddmmyy, dash, end ddmmyy."""
+    """Name a window file: prefix, start ddmmyy, dash, end ddmmyy (for example cork010122-020722.csv)."""
     return f"{prefix}{start:%d%m%y}-{end:%d%m%y}.csv"
 
 
@@ -190,7 +188,7 @@ def main():
         # availability_start is each station's first available date (Galway Briarhill: 2022-12-22)
         for w_start, w_end in windows(st.availability_start.date(), END_DATE):
             dest = LOCAL_RAW_DIR / st.raw_folder / file_name(prefix, w_start, w_end)
-            if dest.exists():   # re-runs skip files already downloaded (including the manual ones)
+            if dest.exists():   # re-runs skip files already downloaded
                 counts["skipped"] += 1
                 continue
             counts[download_window(st.source_download_id, w_start, w_end, dest)] += 1
