@@ -1729,7 +1729,7 @@ The project uses environmental monitoring data about places, not people. No name
 | airquality.ie (EPA Ireland) | The readings page says the terms of the Creative Commons Attribution licence apply and links to CC BY 4.0 | The same page: the data "has not yet been validated" and "may be subject to revision"; sharp spikes may be a calibration or monitor fault | airquality.ie, EPA Ireland (CC BY 4.0) |
 | EEA Air Quality Download Service | The EEA legal notice says EEA materials are published under CC BY, with exceptions for third-party content and for data that carries its own re-use notice | Each hourly value has a Validity flag (1 valid, 2 valid below the detection limit with the value given, 3 valid below the detection limit with the value replaced by half the limit, -1 and -99 not valid) and a Verification flag; only validity 1, 2 and 3 are used, and only verified (E1a) data is downloaded | European Environment Agency (CC BY) |
 
-A notice specific to the Air Quality Download Service data set could not be found on the pages read, so the EEA general policy is assumed to apply and should be re-checked before the data are redistributed.
+Neither the download service nor the EEA dataset page (https://www.eea.europa.eu/data-and-maps/data/aqereporting-8, Prod-ID DAT-3-en; no DOI is assigned) carries a notice of its own, so the EEA general CC BY policy is taken to apply. The airquality.ie Terms of Use (clause 16) also forbid copying the website or making derivative works of it; the two statements are not reconciled on the site, so the project relies on the data-specific CC BY statement, reads only the public readings pages at a slow rate, keeps the files in a private bucket and credits the source.
 
 **Automated access.** UK-AIR's robots.txt disallows `/datastore/` (the website's CSV files), so the project downloads UK-AIR's `.RData` files under `/openair/R_data/`, which are not disallowed. The EEA download service's robots.txt allows everything, and airquality.ie has none. All download scripts use a descriptive User-Agent, timeouts, retries and pauses between requests. UK-AIR was not asked whether bulk automated use of the `.RData` files is welcome.
 
@@ -2110,7 +2110,7 @@ The commands are the same in PowerShell and bash. All twelve together take about
 - **check_time_labels:** Athens is the only time zone whose label changes between winter and summer, `24.7%` of the training and development rows. Output in `reports/time_labels/`.
 - **check_block_rule:** `Totals: dropped by the rule 1,405, kept with a partial mean 3,232, empty 18,291`, then development-year persistence MAE for a rule of 1, 2 and 3 valid hours (3.843, 3.869, 3.912). Output in `reports/block_rule/`.
 - **check_training_coverage:** `Training stations: 12; cities: 9; countries: 5`. Output in `reports/training_coverage/`.
-- **baseline_persistence:** `rows 31,192; MAE 3.869 ug/m3; RMSE 7.993; mean target 9.07`. Output in `reports/baseline/`.
+- **baseline_persistence:** `rows 31,192; MAE 3.869 ug/m3; RMSE 7.993; mean target 9.07; MAE is 43% of the mean target`. Output in `reports/baseline/`.
 - **The six `eda_*.py` scripts:** each saves a figure (`01_missingness_heatmap.png` to `07_dev_year_drift.png` in `reports/figures/`, with `eda_seasonal_diurnal.py` saving two) and ends with a `FINDING`, a `DECISION` and a `LIMITATION` line, for example `5 of 112 station-years are below 75% valid` from `eda_missingness.py`. Their tables are in `reports/eda/<topic>/`.
 
 ### If something fails
