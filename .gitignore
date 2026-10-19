@@ -21,9 +21,8 @@ Thumbs.db
 .vscode/
 .idea/
 
-# --- Raw downloads ---
-# Keep this line commented while raw_data/ is committed. Uncomment it if you
-# decide the downloads should live only in GCS (the manifest still records them).
+# --- Raw downloads and source metadata ---
+# Fetched by the download scripts. Raw files live in GCS
 raw_data/
 metadata/source_metadata/
 
