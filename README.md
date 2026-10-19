@@ -472,6 +472,8 @@ append_manifest_entry(bucket, {
         "rolling_window_blocks": ROLLING_WINDOW_BLOCKS,
         "target_horizon_blocks": TARGET_HORIZON_BLOCKS,
         "aggregation_min_valid_hours": MIN_VALID_HOURS,
+        "study_start_utc": STUDY_START_UTC.isoformat(),
+        "high_value_threshold": HIGH_VALUE_THRESHOLD,
         "completeness_threshold": COMPLETENESS_THRESHOLD,
     },
     "outputs": outputs,
@@ -702,7 +704,7 @@ def windows(start: date, end: date):
 
 ### Station metadata
 
-`download_source_metadata.py` sends the request that the EEA Air Quality Viewer's "Download CSV" button sends (https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements). The page posts the chosen Country filter to `.../AQViewer/download?fqn=Airquality_Dissem.b2g.measurements&f=csv` and the server answers with a zip file holding `DataExtract.csv`. The script does this for Denmark, Spain, France, the United Kingdom, Greece and Ireland (the countries of `station_reference.csv`) and saves each table, unchanged, as `metadata/source_metadata/<country>.csv` (`uk.csv` for the United Kingdom). These tables are where the station IDs, coordinates and station types in `station_reference.csv` come from; no pipeline script reads them. Unlike the raw data, they are kept in git.
+`download_source_metadata.py` sends the request that the EEA Air Quality Viewer's "Download CSV" button sends (https://discomap.eea.europa.eu/App/AQViewer/index.html?fqn=Airquality_Dissem.b2g.measurements). The page posts the chosen Country filter to `.../AQViewer/download?fqn=Airquality_Dissem.b2g.measurements&f=csv` and the server answers with a zip file holding `DataExtract.csv`. The script does this for Denmark, Spain, France, the United Kingdom, Greece and Ireland (the countries of `station_reference.csv`) and saves each table, unchanged, as `metadata/source_metadata/<country>.csv` (`uk.csv` for the United Kingdom). These tables are where the station IDs, coordinates and station types in `station_reference.csv` come from; no pipeline script reads them. Like the raw data, they are not committed to git (`metadata/source_metadata/` is in `.gitignore`); the script downloads them.
 
 Tested against the files saved from the viewer by hand: `denmark.csv` and `greece.csv` are byte-for-byte identical. The other four are larger or updated: with only the Country filter the viewer returns every row (for example Spain is about 18 MB, because it includes every pollutant; the hand-saved file had been narrowed to PM2.5), and `uk.csv` has the same 11,742 rows with different text in 994 rows of two columns (Measurement Equipment and Sampling Method). For all 17 stations the PM2.5 latitude and longitude in the new tables equal those in `station_reference.csv`.
 

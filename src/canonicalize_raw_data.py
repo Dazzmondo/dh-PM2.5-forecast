@@ -6,6 +6,7 @@ INPUT:  raw_data/epa/, raw_data/uk_air/, raw_data/eea/   (original downloads)
 OUTPUT: processed_data/canonical_hourly.parquet
     station_id, source, city, country, timezone, latitude, longitude,
     timestamp_utc (hourly, UTC, INTERVAL-START labelled), pm25 (ug/m3)
+    (also processed_data/quality_reports/high_value_audit.csv: what was decided for each value above 500)
 
 What it does
 1. Matches every file to a station (FOLDER MAPPING below).
@@ -23,7 +24,17 @@ What it does
    windows). DIFFERENT values for the same station-hour stop the run: some
    EEA stations have more than one PM2.5 sampling point over time, so
    overlap is possible and choosing one by row order would be arbitrary.
-5. Stops, writing nothing, if a file cannot be parsed or matched to a
+5. Drops every row before STUDY_START_UTC (2018-01-01). The EEA download API
+   ignores dates and returns each station's complete series, so the files
+   reach back to 2013; the study period starts in 2018. The number of rows
+   dropped per station is printed.
+6. Checks every value above HIGH_VALUE_THRESHOLD (500 ug/m3) with a written
+   rule (handle_high_values): an isolated value that no other station
+   confirms is set to missing; a value that is sustained AND confirmed is kept.
+   Each decision is printed and saved. Negative values are NOT changed: they
+   are instrument noise near zero (see the M2 evidence), and any clipping a
+   model needs is done inside that model's own feature step.
+7. Stops, writing nothing, if a file cannot be parsed or matched to a
    station, or (REQUIRE_ALL_STATIONS = True) if a selected station has no
    data, so a partial dataset can never be mistaken for a complete one.
 
@@ -50,6 +61,7 @@ from stations import load_station_reference
 
 LOCAL_RAW_DIR = RAW_DIR   # original downloads: epa/, uk_air/ and eea/ sub-folders
 OUTPUT_PATH = PROCESSED_DIR / "canonical_hourly.parquet"
+AUDIT_PATH = PROCESSED_DIR / "quality_reports" / "high_value_audit.csv"
 
 # Timestamp conventions. A row stamped 09:00 under "hour ending" covers
 # 08:00-09:00; we shift to interval-START so all sources match.
@@ -64,6 +76,22 @@ EEA_LABEL_UTC_OFFSET_HOURS = 1
 # value replaced by half the limit. Everything else (-1, -99, ...) is invalid
 # and carries a sentinel value (0, -999, -9999) that must never be used.
 EEA_VALID_CODES = (1, 2, 3)
+
+# Study period: rows before this are dropped (the EEA API returns full series that start as early as 2013).
+STUDY_START_UTC = pd.Timestamp("2018-01-01", tz="UTC")
+
+# High-value rule (a judgement, written down before the evidence was looked at). A value above HIGH_VALUE_THRESHOLD is
+# kept only if it is both SUSTAINED (at least SUSTAINED_MIN_HOURS other hours of the same station within
+# +/-NEIGHBOUR_WINDOW_HOURS are above SUSTAINED_LEVEL) and CORROBORATED (another station of the same city or country is
+# above max(SUSTAINED_LEVEL, CORROBORATION_FACTOR x its own median) within the same window). Otherwise it is set to missing.
+# Corroboration is evidence, not proof. The medians use data before MEDIAN_UNTIL_UTC only, so test-year (2025) data
+# never sets a threshold.
+HIGH_VALUE_THRESHOLD = 500        # ug/m3
+SUSTAINED_LEVEL = 100             # ug/m3
+SUSTAINED_MIN_HOURS = 2
+NEIGHBOUR_WINDOW_HOURS = 3
+CORROBORATION_FACTOR = 3
+MEDIAN_UNTIL_UTC = pd.Timestamp("2025-01-01", tz="UTC")
 
 REQUIRE_ALL_STATIONS = True  # True: a selected station with no data stops the run (use for the real build).
 #                              False: warn and continue (partial test runs only).
@@ -266,6 +294,52 @@ def resolve_duplicates(canonical: pd.DataFrame) -> pd.DataFrame:
     return canonical
 
 
+def trim_to_study_period(canonical: pd.DataFrame) -> pd.DataFrame:
+    """Drop every row before STUDY_START_UTC and print how many rows were dropped per station."""
+    kept = canonical[canonical.timestamp_utc >= STUDY_START_UTC].reset_index(drop=True)
+    before = canonical.groupby("station_id").size()
+    after = kept.groupby("station_id").size().reindex(before.index, fill_value=0)
+    dropped = (before - after)[(before - after) > 0]
+    print(f"\n--- Study period: dropped {int(dropped.sum())} rows before {STUDY_START_UTC:%Y-%m-%d} "
+          f"({len(canonical)} -> {len(kept)} rows) ---")
+    if len(dropped):
+        print(dropped.rename("rows_dropped").to_string())
+    return kept
+
+
+def handle_high_values(canonical: pd.DataFrame) -> pd.DataFrame:
+    """Apply the high-value rule (see the constants above) and return the table with isolated spikes set to NaN.
+
+    Every value above HIGH_VALUE_THRESHOLD is listed with the evidence and the decision, printed and saved to AUDIT_PATH.
+    """
+    high = canonical[canonical.pm25 > HIGH_VALUE_THRESHOLD]
+    if high.empty:
+        print(f"\n--- High values: none above {HIGH_VALUE_THRESHOLD} ug/m3 ---")
+        return canonical
+    # each station's typical level, from before the test year, used only to set the corroboration threshold
+    medians = canonical[canonical.timestamp_utc < MEDIAN_UNTIL_UTC].groupby("station_id").pm25.median()
+    window = pd.Timedelta(hours=NEIGHBOUR_WINDOW_HOURS)
+    rows = []
+    for idx, r in high.iterrows():
+        near = canonical[(canonical.timestamp_utc >= r.timestamp_utc - window) & (canonical.timestamp_utc <= r.timestamp_utc + window)]
+        own = near[(near.station_id == r.station_id) & (near.timestamp_utc != r.timestamp_utc)]
+        sustained = int((own.pm25 > SUSTAINED_LEVEL).sum()) >= SUSTAINED_MIN_HOURS
+        others = near[(near.station_id != r.station_id) & ((near.city == r.city) | (near.country == r.country))]
+        threshold = (others.station_id.map(medians) * CORROBORATION_FACTOR).clip(lower=SUSTAINED_LEVEL)
+        corroborated = bool((others.pm25 > threshold).any())
+        keep = sustained and corroborated
+        if not keep:
+            canonical.loc[idx, "pm25"] = float("nan")
+        rows.append({"station_id": r.station_id, "timestamp_utc": r.timestamp_utc, "value": r.pm25, "sustained": sustained,
+                     "corroborated": corroborated, "action": "kept" if keep else "set to NaN"})
+    audit = pd.DataFrame(rows)
+    print(f"\n--- High values: {len(audit)} value(s) above {HIGH_VALUE_THRESHOLD} ug/m3 checked ---")
+    print(audit.to_string(index=False))
+    AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    audit.to_csv(AUDIT_PATH, index=False)
+    return canonical
+
+
 def main():
     """Parse every raw file, join them into one hourly table, and save it (see the module docstring)."""
     stations = load_station_reference()
@@ -337,6 +411,10 @@ def main():
     canonical = canonical.merge(meta, on="station_id", how="left")[
         ["station_id", "source", "city", "country", "timezone", "latitude", "longitude", "timestamp_utc", "pm25"]
     ].sort_values(["station_id", "timestamp_utc"]).reset_index(drop=True)
+
+    # --- study period and the high-value rule ---
+    canonical = trim_to_study_period(canonical)
+    canonical = handle_high_values(canonical)
 
     # --- coverage: which of the selected stations produced data? ---
     found, expected = set(canonical.station_id), set(stations.station_id)

@@ -72,7 +72,11 @@ def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
         parts.append(g)
     df = pd.concat(parts).sort_index()   # join the per-timezone pieces back together
 
-    df["time_block"] = df["local_timestamp"].dt.hour // 3   # 0 = 00:00-02:59 local ... 7 = 21:00-23:59
+    # A label, not a fixed local window: the local clock hour at the START of the UTC block, divided by 3 (rounded down).
+    # The block itself runs 3 hours from that start, so label 0 covers e.g. local 01:00-04:00 in Madrid in winter. Where the
+    # UTC offset changes by one hour with daylight saving (Athens, +2/+3), the same UTC block gets a different label in
+    # summer. For model features use the continuous local time in local_timestamp instead.
+    df["time_block"] = df["local_timestamp"].dt.hour // 3
     df["day_of_week"] = df["local_timestamp"].dt.dayofweek  # 0 = Monday ... 6 = Sunday
     df["month"] = df["local_timestamp"].dt.month            # 1-12
     # meteorological seasons: Dec-Feb winter, Mar-May spring, Jun-Aug summer, Sep-Nov autumn
