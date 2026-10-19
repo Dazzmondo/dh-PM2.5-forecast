@@ -752,7 +752,7 @@ Alternatively this metadata can be found by checking each station in the city on
 
 You can find the easting/northing for each station at the bottom of the station page, e.g. https://airquality.ie/station/EPA-59 . This will need to be converted to latitude/longitude. Recommended to simply use the EEA metadata instead.
 
-**What was and was not tested.** Each script was run against the live source and compared with files downloaded earlier by hand (above). Run from an empty `raw_data/` folder (the download scripts create the folders), the pipeline reproduces the numbers in this document. Not tested: data for 2026.
+**What was tested.** Each script was run against the live source and compared with files downloaded earlier by hand (above). Run from an empty `raw_data/` folder (the download scripts create the folders), the pipeline reproduces the numbers in this document. The scripts have not been run for 2026 data (reserved for Milestone 4).
 
 ---
 
