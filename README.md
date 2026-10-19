@@ -617,7 +617,7 @@ python src/download_source_metadata.py
 
 | Script | Source | Format of the saved files | What it fetches | robots.txt |
 |---|---|---|---|---|
-| `src/download_ukair.py` | UK-AIR (Defra) | `.RData` (R data file) | the 32 yearly files (4 stations x 2018-2025) from `https://uk-air.defra.gov.uk/openair/R_data/` | `/datastore/` (the website's CSV files) is disallowed, `/openair/R_data/` is not |
+| `src/download_ukair.py` | UK-AIR (Defra) | `.RData` (R data file) | the 32 yearly files (4 stations x 2018-2025) from `https://uk-air.defra.gov.uk/openair/R_data/<site>_<year>.RData` (the folder has no index page; for example `BEL2_2024.RData`) | `/datastore/` (the website's CSV files) is disallowed, `/openair/R_data/` is not |
 | `src/download_eea.py` | EEA | Parquet | the verified hourly PM2.5 file of each of the 7 stations, through the EEA download API | allows everything |
 | `src/download_epa.py` | EPA Ireland (airquality.ie) | CSV | one CSV per 183-day window and station, read from the readings page | no robots.txt |
 | `src/download_source_metadata.py` | EEA Air Quality Viewer | CSV | one metadata table per country (6 files) into `metadata/source_metadata/` | no robots.txt |
