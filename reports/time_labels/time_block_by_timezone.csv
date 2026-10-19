@@ -1,0 +1,49 @@
+timezone,utc_hour,utc_offsets,labels
+Europe/Athens,0,"[2.0, 3.0]","[0, 1]"
+Europe/Athens,3,"[2.0, 3.0]","[1, 2]"
+Europe/Athens,6,"[2.0, 3.0]","[2, 3]"
+Europe/Athens,9,"[2.0, 3.0]","[3, 4]"
+Europe/Athens,12,"[2.0, 3.0]","[4, 5]"
+Europe/Athens,15,"[2.0, 3.0]","[5, 6]"
+Europe/Athens,18,"[2.0, 3.0]","[6, 7]"
+Europe/Athens,21,"[2.0, 3.0]","[0, 7]"
+Europe/Copenhagen,0,"[1.0, 2.0]",[0]
+Europe/Copenhagen,3,"[1.0, 2.0]",[1]
+Europe/Copenhagen,6,"[1.0, 2.0]",[2]
+Europe/Copenhagen,9,"[1.0, 2.0]",[3]
+Europe/Copenhagen,12,"[1.0, 2.0]",[4]
+Europe/Copenhagen,15,"[1.0, 2.0]",[5]
+Europe/Copenhagen,18,"[1.0, 2.0]",[6]
+Europe/Copenhagen,21,"[1.0, 2.0]",[7]
+Europe/Dublin,0,"[0.0, 1.0]",[0]
+Europe/Dublin,3,"[0.0, 1.0]",[1]
+Europe/Dublin,6,"[0.0, 1.0]",[2]
+Europe/Dublin,9,"[0.0, 1.0]",[3]
+Europe/Dublin,12,"[0.0, 1.0]",[4]
+Europe/Dublin,15,"[0.0, 1.0]",[5]
+Europe/Dublin,18,"[0.0, 1.0]",[6]
+Europe/Dublin,21,"[0.0, 1.0]",[7]
+Europe/London,0,"[0.0, 1.0]",[0]
+Europe/London,3,"[0.0, 1.0]",[1]
+Europe/London,6,"[0.0, 1.0]",[2]
+Europe/London,9,"[0.0, 1.0]",[3]
+Europe/London,12,"[0.0, 1.0]",[4]
+Europe/London,15,"[0.0, 1.0]",[5]
+Europe/London,18,"[0.0, 1.0]",[6]
+Europe/London,21,"[0.0, 1.0]",[7]
+Europe/Madrid,0,"[1.0, 2.0]",[0]
+Europe/Madrid,3,"[1.0, 2.0]",[1]
+Europe/Madrid,6,"[1.0, 2.0]",[2]
+Europe/Madrid,9,"[1.0, 2.0]",[3]
+Europe/Madrid,12,"[1.0, 2.0]",[4]
+Europe/Madrid,15,"[1.0, 2.0]",[5]
+Europe/Madrid,18,"[1.0, 2.0]",[6]
+Europe/Madrid,21,"[1.0, 2.0]",[7]
+Europe/Paris,0,"[1.0, 2.0]",[0]
+Europe/Paris,3,"[1.0, 2.0]",[1]
+Europe/Paris,6,"[1.0, 2.0]",[2]
+Europe/Paris,9,"[1.0, 2.0]",[3]
+Europe/Paris,12,"[1.0, 2.0]",[4]
+Europe/Paris,15,"[1.0, 2.0]",[5]
+Europe/Paris,18,"[1.0, 2.0]",[6]
+Europe/Paris,21,"[1.0, 2.0]",[7]

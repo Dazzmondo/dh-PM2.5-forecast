@@ -1,0 +1,13 @@
+country,station_id,seasonal_amplitude,diurnal_amplitude_winter,diurnal_amplitude_summer,highest_month,lowest_month,evening_peak_hour_winter
+DK,DK0034A,0.24,0.4,0.37,6,1,17
+ES,ES0118A,0.62,0.58,0.38,8,3,21
+ES,ES1525A,0.51,0.49,0.43,7,3,21
+GB,GB0567A,0.58,0.67,0.21,1,7,20
+GR,GR0003A,0.19,0.71,0.28,1,8,22
+GR,GR0039A,0.28,0.31,0.26,7,12,19
+IE,IE0028A,0.91,1.14,0.3,12,7,20
+IE,IE004BP,1.76,1.59,1.15,12,7,21
+IE,IE005AP,0.67,0.71,0.2,1,7,20
+IE,IE005CP,0.92,0.86,0.33,3,7,18
+IE,IE007CP,1.15,1.08,0.21,1,7,20
+IE,IE009GY,0.97,0.81,0.28,1,8,19

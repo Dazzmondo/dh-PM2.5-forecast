@@ -1,0 +1,10 @@
+country,city,stations,rows,train_rows,percent_of_rows
+DK,Copenhagen,1,16796,14339,10.9
+ES,Madrid,2,36265,31016,23.5
+GB,Belfast,1,19644,16727,12.7
+GR,Athens,2,38167,32686,24.7
+IE,Cork,1,7156,4504,4.6
+IE,Dublin,2,15377,10494,9.9
+IE,Galway,1,4898,2565,3.2
+IE,Limerick,1,7881,5347,5.1
+IE,Waterford,1,8372,5686,5.4

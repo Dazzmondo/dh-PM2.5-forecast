@@ -1,0 +1,4 @@
+,train_rows,dev_rows,dev_MAE_own_target
+1 of 3 valid hours,126207.0,32014.0,3.843
+2 of 3 valid hours,123364.0,31192.0,3.869
+3 of 3 valid hours,116410.0,29383.0,3.912

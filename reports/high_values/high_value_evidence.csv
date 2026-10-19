@@ -1,0 +1,8 @@
+station_id,timestamp_utc,value,split,block_mean_with,block_mean_without,other_stations_max_pm25,eea_flags,sustained,corroborated,action
+DK0034A,2023-05-26 09:00:00+00:00,1238.7,training years,418.1,7.8,,"[[1, 1]]",False,False,set to NaN
+DK0034A,2023-07-04 10:00:00+00:00,648.25,training years,235.7,29.4,,"[[1, 1]]",False,False,set to NaN
+DK0034A,2023-07-04 17:00:00+00:00,606.85,training years,295.5,139.8,,"[[1, 1]]",False,False,set to NaN
+DK0034A,2023-07-05 19:00:00+00:00,612.75,training years,227.0,34.2,,"[[1, 1]]",False,False,set to NaN
+IE004BP,2025-03-21 19:00:00+00:00,940.0,test year (2025),303.3,-15.0,IE0028A:47 IE005AP:nan IE005CP:19 IE007CP:21 IE009GY:24,None,False,False,set to NaN
+IE004BP,2025-04-18 03:00:00+00:00,680.0,test year (2025),216.7,-15.0,IE0028A:4 IE005AP:nan IE005CP:4 IE007CP:3 IE009GY:6,None,False,False,set to NaN
+IE004BP,2025-04-18 07:00:00+00:00,588.0,test year (2025),286.5,-15.0,IE0028A:5 IE005AP:nan IE005CP:4 IE007CP:3 IE009GY:4,None,False,False,set to NaN

@@ -1,0 +1,7 @@
+,train_rows,dev_rows,valid_hours
+keep,4504,2652,31565
+nan_all,1797,1830,27743
+clip0,4504,2652,31565
+two_tier(T=2),3562,2442,30617
+two_tier(T=5),4462,2643,31482
+two_tier(T=10),4504,2652,31512

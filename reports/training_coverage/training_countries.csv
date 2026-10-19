@@ -1,0 +1,6 @@
+country,stations,cities
+DK,1,['Copenhagen']
+ES,2,['Madrid']
+GB,1,['Belfast']
+GR,2,['Athens']
+IE,6,"['Cork', 'Dublin', 'Galway', 'Limerick', 'Waterford']"
