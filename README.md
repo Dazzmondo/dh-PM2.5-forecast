@@ -25,6 +25,8 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 
 **Unit of analysis.** One row is one station at one 3-hour block, described by that block and the blocks before it, and its label is the mean of the block two blocks later.
 
+**Lead time.** The forecast is issued when the current block B ends. The target block then starts 3 hours after issuance and ends 6 hours after it, so "six hours ahead" counts from the start of B to the start of the target block (two blocks). This is the one definition used by the code (`TARGET_HORIZON_BLOCKS = 2`), by the persistence baseline and by every planned model, and it is the same as in Milestone 1.
+
 **Intended setting.** An urban air-quality network that issues public forecasts and health alerts. The project is a course experiment and is not used for any real warning.
 
 **Task unchanged since Milestone 1.** The target, the horizon, the stations and the split years are the same as in Milestone 1; what changed are the cleaning and encoding decisions that Milestone 1 left open (see "What changed since Milestone 1, and why" below).

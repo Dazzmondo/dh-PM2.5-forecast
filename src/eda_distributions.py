@@ -45,10 +45,15 @@ def draw(train: pd.DataFrame) -> None:
         right.hist(np.log1p(group["target_pm25"].clip(lower=0)), bins=np.linspace(0, np.log1p(upper), 40), density=True,
                    histtype="step", color=SOURCE_COLORS[source], label=label)
     left.set_title("Target on its own scale", loc="left")
-    left.set_xlabel(f"3-hour mean PM2.5, 6 h ahead (ug/m3; values above {upper:.0f} shown at {upper:.0f})")
+    left.set_xlabel("3-hour mean PM2.5, 6 h ahead (ug/m3)")
+    left.text(0.97, 0.50, f"values above {upper:.0f} are shown at {upper:.0f}", transform=left.transAxes, ha="right", fontsize=8,
+              color=INK_SECONDARY)
     left.set_ylabel("share of rows per ug/m3")
     right.set_title("Target after log1p (negatives clipped to 0)", loc="left")
-    right.set_xlabel("log(1 + PM2.5), PM2.5 in ug/m3 (the spike at 0 is blocks clipped from negative values)")
+    right.set_xlabel("log(1 + PM2.5), PM2.5 in ug/m3")
+    # label the spike at 0 in the plot instead of in the axis label, where it collided with the left panel's label
+    right.annotate("blocks clipped from negative values", xy=(0.05, 0.30), xytext=(0.15, 0.78), fontsize=8, color=INK_SECONDARY,
+                   arrowprops={"arrowstyle": "->", "color": INK_SECONDARY, "linewidth": 0.8})
     right.set_ylabel("share of rows per unit")
     right.set_yticks(right.get_yticks())
     left.legend(loc="upper right")

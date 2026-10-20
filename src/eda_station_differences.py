@@ -81,7 +81,7 @@ def main():
     axis.set_title("Level and spread by station (training years)", loc="left")
     axis.set_xlim(left=min(0, summary["p5"].min() - 0.5))
     handles = [plt.Line2D([0], [0], color=SOURCE_COLORS[s], linewidth=4, label=SOURCE_LABELS[s]) for s in SOURCE_COLORS]
-    axis.legend(handles=handles, loc="upper left")
+    axis.legend(handles=handles, loc="lower right", fontsize=8, handlelength=1.5)   # lower right: no data there
     bars.barh(range(len(explained)), explained.values, color="#2a78d6", height=0.5)
     bars.set_yticks(range(len(explained)))
     bars.set_yticklabels(explained.index)
