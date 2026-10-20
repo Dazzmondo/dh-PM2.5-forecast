@@ -2102,7 +2102,7 @@ These questions were left open in Milestone 1. Each was answered from training a
 
 ---
 
-# Setup Guide (not necessary for peer-marking):
+# Setup Guide:
 
 ## Running the pipeline on your own Google Cloud bucket
 
