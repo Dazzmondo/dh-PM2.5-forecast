@@ -1404,7 +1404,7 @@ Milestone 2 added three rules to `canonicalize_raw_data.py`, each decided from t
 # Study period: rows before this are dropped (the EEA API returns full series that start as early as 2013).
 STUDY_START_UTC = pd.Timestamp("2018-01-01", tz="UTC")
 
-# High-value rule (a judgement, written down before the evidence was looked at). A value above HIGH_VALUE_THRESHOLD is
+# High-value rule (a judgement, fixed before the individual values were examined). A value above HIGH_VALUE_THRESHOLD is
 # kept only if it is both SUSTAINED (at least SUSTAINED_MIN_HOURS other hours of the same station within
 # +/-NEIGHBOUR_WINDOW_HOURS are above SUSTAINED_LEVEL) and CORROBORATED (another station of the same city or country is
 # above max(SUSTAINED_LEVEL, CORROBORATION_FACTOR x its own median) within the same window). Otherwise it is set to missing.
@@ -1690,7 +1690,7 @@ The model-specific representation is therefore produced **after** the common can
 
 # Milestone 2: Evidence and EDA Scripts
 
-Milestone 2 asked for data understanding and a defensible pipeline. Every cleaning rule and modelling choice below comes from a script in `src/` that reads `processed_data/` and prints a table, writes it to `reports/<topic>/` and, for the EDA scripts, saves a figure to `reports/figures/`. The scripts change nothing in `processed_data/`. All of them use the same **decision pool**: the 12 non-held-out stations, 2018-2024 (training and development years). The 2025 test split and the held-out stations are only counted, never used to choose a threshold, a rule or a feature. Each EDA script ends with a printed FINDING, DECISION and LIMITATION. `reports/` holds the generated tables and figures (small files, committed); regenerate them by running the scripts (about a minute each).
+Milestone 2 asked for data understanding and a defensible pipeline. Every cleaning rule and modelling choice below comes from a script in `src/` that reads `processed_data/` and prints a table, writes it to `reports/<topic>/` and, for the EDA scripts, saves a figure to `reports/figures/`. The scripts change nothing in `processed_data/`. All of them use the same **decision pool**: the 12 non-held-out stations, 2018-2024 (training and development years). The 2025 test split and the held-out stations are only counted, never used to choose a threshold, a rule or a feature. Choosing a rule is different from applying it: the above-500 rule is applied to every row, including three values in the 2025 test year, but its thresholds were set from the decision pool and the corroboration medians use only data before 2025, and no model result on the test split was used for any choice. Each EDA script ends with a printed FINDING, DECISION and LIMITATION. `reports/` holds the generated tables and figures (small files, committed); regenerate them by running the scripts (about a minute each).
 
 | Script | Question | Output in `reports/` |
 |---|---|---|
@@ -1729,7 +1729,7 @@ Milestone 2 asked for data understanding and a defensible pipeline. Every cleani
 2. **Thin evidence for unseen cities.** Copenhagen has no valid hours in 2025 and Kilmainham 678; France is not in training and Great Britain only through Belfast. *Addressed by:* per-city scores with row counts, and claims about unseen cities only from the held-out evaluation.
 3. **Unequal data quality and history.** Irish data are unvalidated and have two training years, UK-AIR's status is unknown, so country differences are partly quality differences. *Addressed by:* reporting by source.
 4. **An inferred timestamp.** The EPA convention (hour ending, UTC) is inferred, not documented. *Addressed by:* scoring the Irish stations separately and testing a one-hour shift.
-5. **Judgement thresholds.** The limits of 25%, two thirds, 500 and 100 ug/m3 and three times the median are judgements, labelled as such and written before the evidence. *Addressed by:* the sensitivity checks already run (2-of-3 rule, negatives, values above 500).
+5. **Judgement thresholds.** The limits of 25%, two thirds, 500 and 100 ug/m3 and three times the median are judgements, labelled as such. They were fixed before the individual values and their context were examined (Milestone 1 had counted the values above 500, but had not looked at them one by one). *Addressed by:* the sensitivity checks already run (2-of-3 rule, negatives, values above 500).
 6. **Unconfirmed explanations.** The reasons for Cork's negatives and for the 2024 change are plausible, not confirmed; the same holds for the cause of the outages. *Addressed by:* stating them as such and not building a rule on them.
 
 ---
@@ -1769,7 +1769,18 @@ The development, test and held-out sets are identical; only the training set (35
 The steps are ordered by priority: **core** steps answer the research questions, the others are done if the core is complete.
 
 | Step | Priority | What | How it is checked |
-|
+|---|---|---|---|
+| 1. Models | Core: Linear Regression and XGBoost; optional: GRU/LSTM | Linear Regression and XGBoost, then a GRU or LSTM if time allows, all scored on the same 31,192 development rows as persistence | MAE and RMSE overall and per station, with row counts; the model must beat 3.869 MAE |
+| 2. Feature sets | Core | Baseline = current, lags, rolling statistics, cyclical month and local hour; add "same block yesterday"; compare log1p against the raw scale using the saved scalers; compare the cyclical time features with a one-hot encoding of the UTC block and with no time features | Development year only |
+| 3. Place ablation | Core (research question 3) | Add latitude, longitude, country | Leave-one-city-out cross-validation on the training years (at most 9 folds), time-aware inside each fold |
+| 4. Held-out cities | Core (research question 2) | One final evaluation on Derry, London and Paris, and on the 2025 test split, after every choice is frozen | Each used once; per-city scores; France is not in training and Great Britain only through Belfast |
+| 5. Storage integration | Should | Store model artefacts and metrics in the bucket (`models/`), read the training data from the bucket, log each model with the dataset run ID and scaler hash | Dataset record, scaler record and model record share IDs |
+| 6. Open questions | As needed | Rolling-window length; GRU sequence length; whether Cork needs separate treatment; the EPA timestamp convention | Each decided on training and development data |
+| 7. Later | Milestone 4 | Deployment and retraining on 2026 data | The pipeline already reserves `future_update` |
+
+**Evaluation approach.** Every model is compared with the persistence baseline (MAE 3.869 ug/m3, RMSE 7.99, 31,192 development rows) on exactly the same rows. MAE is the main metric because it is in the units of the target and is not dominated by a few episodes (the baseline's MAE is 43% of the mean target); RMSE is the second metric because it penalises missed pollution episodes more. Both are reported overall and per station with the row count, and pooled scores are given with and without Cork UCC. The training years fit the models; the development year (2024) is used for every choice; cross-validation inside the training years is time-aware (and grouped by city for the place ablation); the 2025 test split and the held-out cities are used once, after the choices are frozen. A model counts as an improvement if it beats persistence on the development year overall, and the report states at how many stations it does so.
+
+**Risks.** Overfitting to the single development year (mitigation: per-station scores and city-grouped validation); data-quality differences driving country effects (mitigation: report by source); the timestamp assumption for Ireland (mitigation: report Irish scores separately and test a one-hour shift).
 
 ## Storage evidence from the project bucket
 
@@ -2061,6 +2072,33 @@ These questions were left open in Milestone 1. Each was answered from training a
 | 7 | What sequence length for the PyTorch model? | Not decided; the autocorrelation suggests at least 8 blocks (24 hours) | Open |
 | 8 to 10 | XGBoost hyperparameters; XGBoost against Linear Regression; whether PyTorch adds value | Not started | Open for Milestone 3 |
 | 11 | Time of day as `time_block` or a continuous local hour? | Continuous: sin/cos of the local hour from `local_timestamp`; `time_block` is a label only | Decided |
+
+---
+
+# AI Acknowledgement
+
+**AI use.** Generative AI tools were used in this project. I am responsible for every claim, line of code and result in this submission.
+
+**Tools and purpose.**
+- **Claude** (Sonnet 5 and Sonnet 5.5) was used as a coding and writing assistant: to turn my design decisions into Python scripts, to run analyses I specified, and to draft the README and this report from my instructions.
+- **ChatGPT** was used to discuss design choices, analyse code and review Claude's recommendations, and to assess drafts of this report against the marking rubric.
+
+**Who decided what.**
+- **The design and the creative decisions were mine.** The research questions, the target (a 3-hour mean six hours ahead), the choice of cities and monitoring stations, the three data sources, the choice of Google Cloud Storage and Parquet, the chronological and held-out-city split design, and the decision to treat generalisation to unseen cities as the central question came from me. The larger Milestone 2 decisions also came from me: what to investigate, what counts as acceptable evidence, which rules to keep simple, and which suggestions to reject.
+- **I guided the AI with course material.** I gave the assistant sample code from the labs, and pointed it to the principles from the lectures that mattered most (for example: keep raw data unchanged, fit anything that learns from data on training data only, prevent leakage, report uncertainty and group sizes, justify every design choice and compare alternatives). I told it to follow the marking rubric and to explain each decision with evidence.
+- **The AI worked out the "how".** Given a decision, Claude proposed the specific code and details: file parsing, the exact functions and thresholds to test, the structure of the scripts, the manifest fields, and first drafts of text. I then reviewed, questioned and changed these. I rejected or changed suggestions that I judged unnecessary or unsupported, for example extra confidence-interval machinery that I thought over-engineered the project, rewriting git history, and a claimed change between Milestone 1 and Milestone 2 that Milestone 1 already contained; and I kept features that I judged useful, such as the `-dirty` commit marker as a demonstration of provenance.
+- **Working rules I set.** The AI was not allowed to commit or push, to edit the submitted Milestone 1 report, or to add files or tools I had not approved, and it had to propose changes and show evidence before implementing them.
+
+**How the output was checked or changed.**
+- I have checked every line of code in `src/`.
+- All scripts were run end to end on real data; the reported row counts, split counts and results come from those runs.
+- The feature table is rebuilt from the canonical table with the pipeline's own functions and compared with the pipeline's output (same rows, same split counts) before any analysis script uses it.
+- Running the local pipeline twice from an empty `processed_data/` gave identical SHA-256 hashes for every output file, which also match the stored dataset record.
+- The UK-AIR `.RData` values were compared with the website's CSV files for all 32 station-years, and the scripted EPA download was compared with the hand-downloaded files.
+- Licence and terms text was compared with the live pages.
+- Code style was checked with `pyflakes`.
+- I reviewed proposed changes before they were applied and corrected or removed AI suggestions that were wrong or unsupported by the data.
+- No confidential, personal or restricted data was uploaded to an AI service; the data are public monitoring data.
 
 ---
 

@@ -80,7 +80,7 @@ EEA_VALID_CODES = (1, 2, 3)
 # Study period: rows before this are dropped (the EEA API returns full series that start as early as 2013).
 STUDY_START_UTC = pd.Timestamp("2018-01-01", tz="UTC")
 
-# High-value rule (a judgement, written down before the evidence was looked at). A value above HIGH_VALUE_THRESHOLD is
+# High-value rule (a judgement, fixed before the individual values were examined). A value above HIGH_VALUE_THRESHOLD is
 # kept only if it is both SUSTAINED (at least SUSTAINED_MIN_HOURS other hours of the same station within
 # +/-NEIGHBOUR_WINDOW_HOURS are above SUSTAINED_LEVEL) and CORROBORATED (another station of the same city or country is
 # above max(SUSTAINED_LEVEL, CORROBORATION_FACTOR x its own median) within the same window). Otherwise it is set to missing.
