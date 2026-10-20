@@ -23,9 +23,15 @@ The initial modelling progression is:
 
 This allows simple, interpretable, nonlinear tabular, and explicit sequence-based approaches to be compared.
 
+**Unit of analysis.** One row is one station at one 3-hour block, described by that block and the blocks before it, and its label is the mean of the block two blocks later.
+
+**Intended setting.** An urban air-quality network that issues public forecasts and health alerts. The project is a course experiment and is not used for any real warning.
+
+**Task unchanged since Milestone 1.** The target, the horizon, the stations and the split years are the same as in Milestone 1; what changed are the cleaning and encoding decisions that Milestone 1 left open (see "What changed since Milestone 1, and why" below).
+
 ## Quick start and status
 
-Milestone 1 (storage, versioning, preprocessing, splits) and Milestone 2 (data understanding, EDA, pipeline implementation) are implemented in `src/`. The Milestone 2 report is `docs/M2.md`. From an empty clone, once Python and the packages are installed (`pip install -r requirements.txt`; the Setup Guide at the end has PowerShell and bash commands for every step), the whole project runs as:
+Milestone 1 (storage, versioning, preprocessing, splits) and Milestone 2 (data understanding, EDA, pipeline implementation) are implemented in `src/`. The Milestone 2 report is `docs/M2.md`. From an empty clone, once Python is installed, a virtual environment is created and activated (`python -m venv .venv`, then `source .venv/Scripts/activate` in bash on Windows, `.\.venv\Scripts\Activate.ps1` in PowerShell, or `source .venv/bin/activate` on macOS and Linux) and the packages are installed (`pip install -r requirements.txt`; the Setup Guide at the end has PowerShell and bash commands for every step), the whole project runs as:
 
 ```
 python src/download_ukair.py
@@ -1006,9 +1012,23 @@ A station ID may be useful for predicting known stations but could allow a model
 
 Because unseen-city generalisation is a core research question, station and city identifiers will be treated carefully.
 
-The final M2 analysis will determine whether they should be model features, metadata only, or represented in a way that does not prevent spatial generalisation.
+Milestone 2 decided this from the evidence: station identity explains 15% of the variance of a 3-hour mean (city 12%, country 11%), so place is not the main driver. The baseline model leaves `station_id`, `city`, `country`, latitude and longitude out; latitude, longitude and country are a named ablation validated by leaving whole cities out.
 
 Latitude and longitude are potentially more appropriate for a model intended to generalise to unseen locations.
+
+### How `time_block` works, and what models use instead
+
+Blocks are fixed 3-hour windows on the UTC clock, starting at 00, 03, ... 21 UTC. `local_timestamp` is the block's start time converted to the station's time zone, and `time_block` is the local hour of that start divided by 3, rounded down. It names the 3-hour bin of the local clock in which the block *starts*, not the window the block covers. For the UTC block 00:00-03:00:
+
+| Station | Winter | Summer |
+|---|---|---|
+| Madrid (UTC+1 / +2) | starts 01:00, label 0 (covers 01:00-04:00) | starts 02:00, label 0 |
+| Dublin (UTC+0 / +1) | starts 00:00, label 0 | starts 01:00, label 0 |
+| Athens (UTC+2 / +3) | starts 02:00, label 0 | starts 03:00, **label 1** |
+
+The label is stable all year except at Athens, where a one-hour shift moves the block start across a bin edge, so every Athens block changes label between winter and summer (24.7% of training and development rows; `check_time_labels.py`). The description "0 = 00:00-02:59" is exactly true only when a station's UTC offset is a multiple of 3 hours.
+
+For models, Milestone 2 uses the sine and cosine of the local hour (at the block midpoint) and of the month, built from `local_timestamp`, and drops `season` (it repeats the month). A sine and cosine pair places the time of day on a 24-hour clock face, so 23:00 and 01:00 are close and midnight is not a jump. A one-hot encoding of the label would inherit the Athens flip, and moving the edges of the three-hour bins only moves the problem to other stations (reasoning; only the Athens case is measured). The cost is readability, which is why the 0-7 label stays in the data for tables and plots. The choice is a judgement and is tested in Milestone 3 against a one-hot encoding of the UTC block and against no time features.
 
 ### Feature extraction code (`feature_extraction.py`)
  
@@ -1367,6 +1387,8 @@ An initial target of approximately 75% valid PM2.5 coverage per year will be use
 
 A block is valid with at least 2 of 3 hourly values. A feature row needs the input block, all 3 lags, all 8 rolling blocks and the target to be valid with nothing imputed. The 75% figure is a diagnostic. Failing station-years are flagged, not removed.
 
+**Why the data are missing.** The evidence supports one statement: the missing hours are not scattered at random (so "missing completely at random" does not describe them); they come in long outages of a whole station, so whether a value is missing depends on the station and the period, both of which are observed, which is the pattern called "missing at random given station and time". A plausible but untested explanation is a monitor failing or being serviced independently of the air quality. What the data cannot show is whether missingness also depends on the concentration itself ("missing not at random", for example a monitor failing during a pollution episode), because the missing values were never observed. The consequence is that scores computed on complete rows describe the times when stations were running.
+
 These rules are implemented in two places. `canonicalize_raw_data.py` applies the source quality rules: EEA rows are valid only if their `Validity` flag is 1, 2 or 3 (invalid rows carry placeholder values such as -9999 and become missing), empty EPA placeholder rows stamped off the hour are dropped, and if two files give different values for the same station-hour the run stops instead of choosing one. `validate_data_quality.py` is an extra quality-check step: it measures the share of valid hours per station and year against the hours expected from `availability_start` and writes its reports to `processed_data/quality_reports/`. It is a diagnostic only; nothing is removed.
 
 Milestone 2 added three rules to `canonicalize_raw_data.py`, each decided from the evidence in `reports/` (see "Milestone 2: Evidence and EDA Scripts") using only the training and development years of the non-held-out stations:
@@ -1687,33 +1709,178 @@ Milestone 2 asked for data understanding and a defensible pipeline. Every cleani
 
 | Topic | Finding (evidence) | Decision |
 |---|---|---|
-| Missing data | 5 of 112 station-years are below 75% valid; 88% of the missing hours are in outages of 24 hours or more and 6% in gaps of 3 hours or less | No imputation; keep the 75% figure as a flag |
+| Missing data | 5 of 112 station-years (all 17 stations, 2018-2025) are below 75% valid; 88% of the missing hours are in outages of 24 hours or more and 6% in gaps of 3 hours or less; the pattern is station outages, not scattered gaps | No imputation; keep the 75% figure as a flag |
 | 2-of-3 rule | It drops 1,405 blocks from 2018 on (0.06% to 1.02% of each station's blocks with data) and keeps 3,232 two-hour blocks; a rule of 1 / 2 / 3 valid hours gives development-year persistence MAE 3.843 / 3.869 / 3.912 | Keep 2 of 3 |
 | Negative readings | See "Missing observations" | Keep; clip inside a model's own step |
 | Values above 500 | See "Missing observations" | Written rule; all 7 set to missing |
 | Target distribution | Skewness 4.7 on its own scale, -0.2 after log1p | Store unchanged; compare log1p for linear and neural models in Milestone 3 |
 | Seasonal and daily cycles | 10 of 12 stations swing by at least 25% of their level over the year | Use sin/cos of month and local hour |
+| Time labels | `time_block` is the 3-hour bin of the local clock in which a block starts; at Athens the same UTC block gets a different label in summer (24.7% of training and development rows) | Models use sin/cos of the local time; `time_block` stays a label |
 | Autocorrelation | Correlation with the block 6 hours ahead: median 0.52 (about 27% of the variance); at 24 hours 0.41, higher than at 9 hours at 5 of 12 stations | Keep the current block, 3 lags and the 24-hour rolling statistics; test "same block yesterday" as a feature |
 | Station differences | Station identity explains 15% of the variance of a 3-hour mean (city 12%, country 11%, source 5%) | Keep station, city, latitude/longitude and country out of the baseline; test them as a named ablation validated by leaving whole cities out |
 | Training coverage | 12 training stations = 9 cities in 5 countries (Ireland 6 stations in 5 cities; Great Britain only Belfast; France not at all) | Leave-one-city-out validation has at most 9 folds |
-| Development year | 11 of 12 station medians within 25% of their training median; Cork UCC +70% (negatives fell from about 20% to 7.6% of its hours in 2024, a possible instrument change, not confirmed); 2024 persistence MAE 3.87 against 3.91 to 4.49 in the training years | Use 2024 as planned, report per-station scores, treat Cork separately |
+| Development year | 11 of 12 station medians within 25% of their training median; Cork UCC +70% (negatives fell from about 20% to 7.6% of its hours in 2024, a possible instrument change, not confirmed); 2024 persistence MAE 3.87 against 3.91 to 4.49 in the training years | Use 2024 as planned; report per-station scores and every pooled score with and without Cork UCC, with Cork's own score, row count and negative-hour share on a separate line |
 | Baseline | Persistence on the development year: MAE 3.869 ug/m3, RMSE 7.99, mean target 9.07, 31,192 rows; by station from 2.87 (Belfast) to 6.65 (Athens Aristotelous) | The score every model must beat |
 
-Limits that apply to all of these: one development year cannot show a trend; the Irish stations have only two training years; Cork's negatives and the spike values rest on a plausible explanation that the data cannot confirm; and the thresholds named above (25%, two thirds, the 500 ug/m3 limit, 100 ug/m3 and 3 x median for corroboration) are judgements, labelled as such in the code.
+**Limitations**, ranked by how much each could change a Milestone 3 conclusion, with what addresses it:
+1. **One development year.** 2024 is the only year used for choices, and it is "not clearly similar" to the training years (Cork UCC is +70%). *Addressed by:* per-station scores beside the pooled one, scores with and without Cork UCC, and time-aware cross-validation inside the training years as a second view.
+2. **Thin evidence for unseen cities.** Copenhagen has no valid hours in 2025 and Kilmainham 678; France is not in training and Great Britain only through Belfast. *Addressed by:* per-city scores with row counts, and claims about unseen cities only from the held-out evaluation.
+3. **Unequal data quality and history.** Irish data are unvalidated and have two training years, UK-AIR's status is unknown, so country differences are partly quality differences. *Addressed by:* reporting by source.
+4. **An inferred timestamp.** The EPA convention (hour ending, UTC) is inferred, not documented. *Addressed by:* scoring the Irish stations separately and testing a one-hour shift.
+5. **Judgement thresholds.** The limits of 25%, two thirds, 500 and 100 ug/m3 and three times the median are judgements, labelled as such and written before the evidence. *Addressed by:* the sensitivity checks already run (2-of-3 rule, negatives, values above 500).
+6. **Unconfirmed explanations.** The reasons for Cork's negatives and for the 2024 change are plausible, not confirmed; the same holds for the cause of the outages. *Addressed by:* stating them as such and not building a rule on them.
 
 ---
 
-# Dataset Size and Suitability
+## What changed since Milestone 1, and why
 
-The course requires at least 10,000 learning samples.
+Milestone 1 already had the automated downloads from the three sources, the bucket with object versioning and the two manifests, Parquet for processed data, and the split design. Those are unchanged. Milestone 1 listed several decisions as open ("Known limitations and open decisions"); this table records how each was settled, and what else changed, with the reason.
 
-This project is expected to exceed that requirement substantially.
+| Topic | Milestone 1 | Milestone 2 | Reason (evidence) |
+|---|---|---|---|
+| Rows before 2018 | Kept in the canonical table and labelled `excluded` by the split step; "Whether to trim them earlier is open" | Dropped in `canonicalize_raw_data.py` | The EEA API returns whole series, so 236,261 rows (20%) lay outside the study period and were never used. Dropping them keeps every later table inside the study period. The cost is small: the first 7 blocks of 2018 at the 5 EEA training stations lose their pre-2018 history, so 35 training rows (0.03%) are gone (5 stations x 7 blocks) |
+| Negative readings (5,666) | Kept and reported; policy open | Kept unchanged in storage; clipped at 0 only inside a model's own step | They cluster near zero and 98.8% of the pool's negatives belong to one station. Setting them to missing would remove 60% of Cork UCC's training rows and censor one side of the distribution; the policies differ by only 0.6% in baseline MAE |
+| Values above 500 ug/m3 (7) | Counted and reported | Set to missing by a written rule, with an audit file | All 7 are isolated and uncorroborated, and one hour moves a 3-hour mean by up to 410 ug/m3 |
+| The 2-of-3 valid-hours rule and the 8-block window | Fixed, flagged as to be settled | The 2-of-3 rule is kept after testing 1, 2 and 3 valid hours; the window length stays open for Milestone 3 | Baseline MAE 3.843 / 3.869 / 3.912 for 1 / 2 / 3: a small, stated difference, and the 2-of-3 rule drops 1,405 blocks while keeping 3,232 two-hour blocks |
+| Station identity as features | `city`, `country`, latitude and longitude are in the feature table | Left out of the baseline model; latitude, longitude and country are a named ablation with leave-one-city-out cross-validation | Station identity explains 15% of the variance (city 12%, country 11%), so place is not the main driver; research questions 2 and 3 are about place, so it is tested, not assumed |
+| Time-of-day and season features | `time_block` (0 to 7) and `season` | Sine and cosine of the local hour and of the month, built from `local_timestamp`; `season` dropped; `time_block` kept as a label only | `time_block` is not a fixed local window and shifts across daylight saving at Athens (24.7% of rows); `season` repeats the month (`check_time_labels.py`) |
+| Scaling | Planned: steps that learn from data fitted on training data only | `fit_scalers.py` writes a versioned artefact (standard and log1p-standard variants) from the train split only, stored in the bucket next to the data | Models that need scaling must not learn from dev, test or held-out rows; the target is right-skewed. The processed Parquet stays unscaled |
+| Evidence | Counts only | Twelve `check_*`, `baseline_persistence` and `eda_*` scripts, with their tables and figures in `reports/` | Each decision above must be reproducible from a script, not typed from memory |
+| Versions | `PIPELINE_VERSION` and `PREPROCESSING_VERSION` v1 | v2; the dataset record stores the study start and the 500 threshold | Behaviour changed, and a record must say with which settings it was made |
 
-The proposed dataset currently consists of 17 monitoring stations across Ireland and Europe. 5 Irish stations are expected to provide hourly PM2.5 observations from 2022–2025, with a 6th Irish station expected to provide data from December 2022 onwards. 6 non-Irish training stations and 5 held-out test stations are expected to provide hourly observations from 2018–2025. 
+**What the changes did to the counts.**
 
-Before accounting for missing observations and data-quality restrictions, this represents approximately 970,000 hourly station-time observations. Aggregating the hourly measurements into 3-hour means gives a theoretical maximum of approximately 324,000 3-hour station-time observations. 
+| | Milestone 1 | Milestone 2 |
+|---|---|---|
+| Canonical hourly rows | 1,180,226 | 943,965 |
+| 3-hour blocks (missing) | 400,611 (24,666) | 318,808 (19,696) |
+| Feature rows | 358,142 | 285,574 |
+| Train / dev / test / held-out test | 123,399 / 31,192 / 25,944 / 13,362 | 123,364 / 31,192 / 25,944 / 13,362 |
+| Excluded | 164,245 | 91,712 |
 
-The final number of supervised learning samples will be lower after applying completeness requirements, quality checks, feature-history requirements and the 6-hour forecasting horizon. This should provide sufficient temporal and geographical diversity for investigating both forecasting performance and generalisation to unseen cities, while still remaining manageable for CPU-based classical ML and a modest PyTorch sequence model.
+The development, test and held-out sets are identical; only the training set (35 rows) and the excluded rows changed, which is what dropping the pre-2018 rows should do.
+
+**Decisions confirmed unchanged, and why.** The 3-hour windows on the UTC clock, the 6-hour target and the split years and held-out cities stay because nothing in the evidence argued against them. Google Cloud Storage stays the only store: the whole 3-hour table has about 319,000 rows and is analysed with pandas in seconds, so BigQuery would add set-up without adding capability. `validate_data_quality.py` still only reports and was not extended with the analysis checks, because validation (does the data meet the contract?) and analysis (what should we decide?) are different jobs, and a validator that also analyses grows into a second analysis script.
+
+## Next steps and evaluation approach (Milestone 3)
+
+The steps are ordered by priority: **core** steps answer the research questions, the others are done if the core is complete.
+
+| Step | Priority | What | How it is checked |
+|
+
+## Storage evidence from the project bucket
+
+The bucket is `darragh-dh-pm25-forecast` (location EU). The raw files were first uploaded in Milestone 1; the Milestone 2 run uploaded the processed stages. The full outputs, including the raw-file and dataset manifest records, are in section 5.4 of `docs/M2.md`; the key ones are below.
+
+```
+gs://darragh-dh-pm25-forecast/manifests/
+gs://darragh-dh-pm25-forecast/metadata/
+gs://darragh-dh-pm25-forecast/processed/
+gs://darragh-dh-pm25-forecast/raw/
+```
+
+![Cloud Console folder browser showing manifests, metadata, processed (canonical, features, scalers, splits, three_hour) and raw, with scalers.json in processed/scalers](docs/images/m2_bucket_overview.png)
+
+Running `upload_raw_data.py` again compares each local file's SHA-256 with the raw manifest and uploads nothing that has not changed:
+
+```
+Bucket 'gs://darragh-dh-pm25-forecast' already exists.
+
+0 new, 0 updated, 86 unchanged (skipped).
+
+--- Verification ---
+Local files: 86
+Objects in GCS: 86
+Counts match.
+```
+
+The bucket settings applied when `upload_raw_data.py` creates the bucket:
+
+```
+lifecycle_config:
+  rule:
+  - action:
+      type: Delete
+    condition:
+      age: 7
+      isLive: false
+location: EU
+uniform_bucket_level_access: true
+versioning_enabled: true
+```
+
+![Cloud Console Protection tab showing object versioning on and one lifecycle rule applied to noncurrent versions](docs/images/m2_bucket_protection.png)
+
+A processed file can be read straight from the bucket with `pandas` and `gcsfs`, using the same Application Default Credentials as the scripts:
+
+```
+python -c "import pandas as pd; df = pd.read_parquet('gs://darragh-dh-pm25-forecast/processed/splits/dev/dev.parquet'); print(df.shape)"
+(31192, 23)
+```
+
+The latest `manifests/dataset_versions.jsonl` record (run `20261019T213934Z`) lists every output with its SHA-256 and row count and the `raw_data_version` of the raw manifest it used. Its `git_commit` ends in `-dirty`, the marker for a run made with uncommitted edits to tracked files; the raw-file record carries a plain commit hash, because the working tree was clean when that file was uploaded. The SHA-256 of every output file, and the repeatability check below, are what tie the stored files to the code.
+
+## Example output and repeatability
+
+**A step that stops, writing nothing.** A copy of a Belfast file was placed in the London folder of a scratch copy of the repository, and `canonicalize_raw_data.py` was run:
+
+```
+STOPPED - these files could not be used:
+  -...\raw_data\uk_air\london\BEL2_2018.RData: not inside any raw_folder listed for uk_air stations in station_reference.csv (['belfast', 'derry', 'london/londonBloomsbury', 'london/londonKensington'])
+```
+
+The exit code was 1 and no `processed_data/` folder was created. With the file removed the same script ran to the end.
+
+**A second step that stops.** `store_preprocessed_data.py` run without the two Google Cloud settings:
+
+```
+GCP_PROJECT_ID and GCS_BUCKET_NAME are not set. Set them as environment variables (PowerShell: $env:GCP_PROJECT_ID="..."; $env:GCS_BUCKET_NAME="...") and run again.
+```
+
+The exit code was 1 and nothing was uploaded.
+
+**Repeatable outputs.** The local steps (`canonicalize_raw_data.py` to `fit_scalers.py`) were run twice from an empty `processed_data/`, and the SHA-256 of every output file was identical between the two runs: the canonical table, the 3-hour table, the feature table with splits, and the four quality reports. `scalers.json` differs only in its `created_utc` field. The hashes of the canonical table (`8b9a0831...`), the 3-hour table (`f3d9209d...`) and the feature table (`b2cd1f6e...`) equal those in the stored dataset record, so the stored files are what the code produces. The downloads depend on live sources (EPA Ireland's data are provisional and may be revised) and are not repeated this way; what fixes the input of a run is the raw manifest, whose checksums (and their hash, `raw_data_version`) identify exactly which raw files were used.
+
+---
+
+# Data Sources, Stations and Dataset Size
+
+**Sources.**
+
+| Source | Owner and access | Format kept | Stations | Years | Validation status |
+|---|---|---|---|---|---|
+| EEA Air Quality Download Service | Owner: European Environment Agency (AQ e-Reporting, dataset page https://www.eea.europa.eu/data-and-maps/data/aqereporting-8, Prod-ID DAT-3-en; no DOI is assigned). Access: https://eeadmz1-downloads-webapp.azurewebsites.net/ and the API behind it, documented at https://eeadmz1-downloads-api-appservice.azurewebsites.net/swagger/index.html | Parquet (one file per station) | 7: Athens x2, Copenhagen, Madrid x2, Paris x2 | 2013-2025 held; study uses 2018-2025 | Verified data only (dataset E1a, Verification flag 1) |
+| EPA Ireland (airquality.ie) | Owner: Environmental Protection Agency, Ireland (the site is operated by Sonitus Systems). Access: the readings page, https://airquality.ie/readings | CSV (6-month windows) | 6: Cork, Dublin x2, Galway, Limerick, Waterford | 2022-2025 (Galway from 22 Dec 2022) | **Not validated** (the site's own disclaimer) |
+| UK-AIR | Owner: Defra (https://uk-air.defra.gov.uk/). Access: the `.RData` files published for the R package openair, one file per station-year at `https://uk-air.defra.gov.uk/openair/R_data/<site>_<year>.RData`, for example https://uk-air.defra.gov.uk/openair/R_data/BEL2_2024.RData (the folder itself has no index page) | `.RData` (one file per station-year) | 4: Belfast, Derry, London x2 | 2018-2025 | The files carry no per-value ratification status |
+
+Station identity, coordinates, time zone and each station's first expected date live in one table, `metadata/station_reference.csv` (17 rows), whose IDs and coordinates come from the EEA's station metadata (six country tables downloaded by `download_source_metadata.py`).
+
+**Station context.** An hourly PM2.5 value is the mass concentration of particles smaller than 2.5 micrometres, in ug/m3, averaged over the hour at the station's air inlet. The EEA metadata tables (downloaded by `download_source_metadata.py`; they also list the EPA and UK-AIR stations) record each station's type, area and PM2.5 measurement method:
+
+| Station | Source | Station type | Area | Measurement method |
+|---|---|---|---|---|
+| Cork UCC (`IE004BP`) | epa | background | suburban | BETA |
+| Dublin Rathmines (`IE0028A`) | epa | background | urban | TEOM-FDMS |
+| Dublin Kilmainham (`IE005AP`) | epa | traffic | urban | light-scat |
+| Galway Briarhill (`IE009GY`) | epa | traffic | suburban | light-scat |
+| Limerick Peoples Park (`IE007CP`) | epa | background | urban | light-scat |
+| Waterford Paddy Brownes Road (`IE005CP`) | epa | background | suburban | light-scat |
+| Belfast Centre (`GB0567A`) | uk_air | background | urban | OPC-CMC, TEOM-FDMS |
+| Derry Rosemount (`GB1060A`) | uk_air | background | urban | BETA, TEOM-FDMS |
+| London Bloomsbury (`GB0566A`) | uk_air | background | urban | BETA, TEOM-FDMS |
+| London N. Kensington (`GB0620A`) | uk_air | background | urban | TEOM-FDMS; active sampling |
+| Athens Agia Paraskevi (`GR0039A`) | eea | background | suburban | BETA |
+| Athens Aristotelous (`GR0003A`) | eea | traffic | urban | BETA |
+| Copenhagen (`DK0034A`) | eea | traffic | urban | BETA, TEOM; active sampling |
+| Madrid Cuatro Caminos (`ES1525A`) | eea | traffic | urban | TEOM |
+| Madrid Escuelas Aguirre (`ES0118A`) | eea | traffic | urban | TEOM |
+| Paris Gennevilliers (`FR04002`) | eea | background | urban | OPC-CMC, TEOM, TEOM-FDMS, other |
+| Paris Saint-Denis (`FR04058`) | eea | traffic | urban | BETA, TEOM, other |
+
+Seven stations are traffic sites and ten are background sites; all are in urban or suburban areas. The method codes are as recorded in the metadata: BETA is beta attenuation, TEOM is a tapered element oscillating microbalance (TEOM-FDMS adds a correction for volatile particles), and light-scat is light scattering; the other codes are kept as recorded. A station with several methods has one metadata record per sampling point over the years, so the method in force in a given year cannot be read from this table. The methods differ between stations (four of the six Irish stations use light scattering; Cork UCC uses beta attenuation and Dublin Rathmines TEOM-FDMS), so part of the difference in levels and in negative readings between stations may be instrument-related; that is a plausible explanation, not a tested one.
+
+**Size.** The course requires at least 10,000 learning samples. The 86 raw files become 943,965 canonical hourly rows (after dropping 236,261 rows before 2018), 318,808 three-hour blocks (19,696 missing), and 285,574 feature rows (33,234 dropped for lacking a full history or a valid target). The splits are train 123,364, dev 31,192, test 25,944, held-out test 13,362 and excluded 91,712. Of the excluded rows, 91,674 belong to the five held-out stations outside their 2025 test year (they are never used) and 38 are rows of training stations whose input and target blocks fall in different periods (18 across 2023 and 2024, 20 across 2024 and 2025). The data cover 12 training stations in 9 cities and 5 countries plus the 5 held-out stations, which is enough temporal and geographical diversity for forecasting and for generalisation to unseen cities, and small enough for CPU-based classical ML and a modest PyTorch sequence model.
 
 ---
 
@@ -1777,6 +1944,43 @@ Canonical processing
 ```
 
 The architecture deliberately uses different technologies for different workloads rather than treating one database or storage system as the solution to every problem.
+
+**The implemented pipeline**, from the sources to the reports (arrows show the files one step hands to the next):
+
+```
+SOURCE     UK-AIR (Defra)            EEA Air Quality Download     EPA Ireland (airquality.ie)
+           .RData files              Service API, Parquet         readings pages, CSV
+               |                              |                           |
+               v                              v                           v
+INGEST     download_ukair.py          download_eea.py            download_epa.py
+           (+ download_source_metadata.py: EEA station metadata)
+                                      |
+                                      v
+           raw_data/   original files, never edited
+                                      |
+                                      v
+STORE      upload_raw_data.py  ->  GCS raw/  +  manifests/raw_files.jsonl (SHA-256 per file)
+                                      |
+                                      v
+VALIDATE   canonicalize_raw_data.py -> processed_data/canonical_hourly.parquet
+              (parse, match files to stations, UTC, trim to 2018+, above-500 rule; stops on bad files)
+           validate_data_quality.py -> quality_reports/  (reports only)
+                                      |
+                                      v
+TRANSFORM  aggregate_to_3hour.py -> feature_extraction.py -> create_splits.py -> fit_scalers.py
+              (3-hour blocks -> lags, rolling statistics, target -> split labels -> train-only scalers)
+                                      |
+                                      v
+STORE      store_preprocessed_data.py -> GCS processed/  +  manifests/dataset_versions.jsonl
+                                      |
+                                      v
+OUTPUT     check_*.py, eda_*.py, baseline_persistence.py -> reports/ (tables, figures)
+           split datasets (train, dev, test, held-out) for Milestone 3
+```
+
+The raw files are stored (in `raw_data/` and in the bucket) before any validation, so the original is kept unchanged whatever the validation decides; every later stage reads the stored copy and writes a new file. Scripts hand data to each other only through files, so any step can be re-run alone. Only `upload_raw_data.py` and `store_preprocessed_data.py` talk to the cloud.
+
+**Automated and manual.** Every step from the downloads to the figures is a script run by hand, one command per step; there is no scheduler or orchestration tool, because the data are historical and the pipeline is run on request. The only manual actions are signing in to Google Cloud (`gcloud auth application-default login`), setting the two environment variables, and taking the console screenshots used as storage evidence.
 
 ---
 
@@ -2064,7 +2268,7 @@ Everything except `upload_raw_data.py` and `store_preprocessed_data.py` runs ent
 - **aggregate:** `318808 3-hour blocks, 19696 failed the 2/3-hour rule`
 - **features:** `285574 remain`, 22 columns
 - **splits:**
-  - train 123,364, dev 31,192, test 25,944, held_out_test 13,362 and excluded 91,712 (56 of them because their input and target fall in different periods).
+  - train 123,364, dev 31,192, test 25,944, held_out_test 13,362 and excluded 91,712 (91,674 are rows of the five held-out stations outside their 2025 test year, and 38 are rows of training stations whose input and target fall in different periods).
   - `Leakage check passed`
   - Held-out rows per station: FR04002=2,304, FR04058=2,734, GB0566A=2,892, GB0620A=2,880, GB1060A=2,552.
 - **fit_scalers:** `Fitted on 123,364 train rows of 12 stations (2018-01-01 to 2023-12-31)` and three `Check:` lines.
