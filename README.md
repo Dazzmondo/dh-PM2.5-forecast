@@ -2058,6 +2058,12 @@ These questions were left open in Milestone 1. Each was answered from training a
 - **The design and the creative decisions were mine.** The research questions, the target (a 3-hour mean six hours ahead), the choice of cities and monitoring stations, the three data sources, the choice of Google Cloud Storage and Parquet, the chronological and held-out-city split design, and the decision to treat generalisation to unseen cities as the central question came from me. The larger Milestone 2 decisions also came from me: what to investigate, what counts as acceptable evidence, which rules to keep simple, and which suggestions to reject.
 - **I guided the AI with course material.** I gave the assistant sample code from the labs, and pointed it to the principles from the lectures that mattered most (for example: keep raw data unchanged, fit anything that learns from data on training data only, prevent leakage, report uncertainty and group sizes, justify every design choice and compare alternatives). I told it to follow the marking rubric and to explain each decision with evidence.
 - **The AI worked out the "how".** Given a decision, Claude proposed the specific code and details: file parsing, the exact functions and thresholds to test, the structure of the scripts, the manifest fields, and first drafts of text. I then reviewed, questioned and changed these. I rejected or changed suggestions that I judged unnecessary or unsupported, for example extra confidence-interval machinery that I thought over-engineered the project, rewriting git history, and a claimed change between Milestone 1 and Milestone 2 that Milestone 1 already contained; and I kept features that I judged useful, such as the `-dirty` commit marker as a demonstration of provenance.
+- **The pipeline diagram.** I decided what the diagram had to show (the stages, the three sources, and the scripts and files at each step) and that it had to match the implemented code and storage choices. ChatGPT drew the images; I analysed each generated image against the pipeline and gave it written instructions on what to change, over several versions.
+  One example was the instruction to reroute the arrow from `raw_data/` into the first `STORE` box:
+  1. Create a slightly larger gap between the first and second rows of boxes.
+  2. Route the arrow down from `raw_data/`, then left, then down again into the `STORE` box.
+  3. Keep the existing box colours, text, layout, and styling unchanged.
+  4. Ensure the arrow does not pass through any subheadings or point to `VALIDATE` or `TRANSFORM`.
 - **Working rules I set.** The AI was not allowed to commit or push, to edit the submitted Milestone 1 report, or to add files or tools I had not approved, and it had to propose changes and show evidence before implementing them.
 
 **How the output was checked or changed.**
@@ -2067,6 +2073,7 @@ These questions were left open in Milestone 1. Each was answered from training a
 - Running the local pipeline twice from an empty `processed_data/` gave identical SHA-256 hashes for every output file, which also match the stored dataset record.
 - The UK-AIR `.RData` values were compared with the website's CSV files for all 32 station-years, and the scripted EPA download was compared with the hand-downloaded files.
 - Licence and terms text was compared with the live pages.
+- I analysed every version of the pipeline diagram against the code and storage choices, and had each error I found corrected.
 - Code style was checked with `pyflakes`.
 - I reviewed proposed changes before they were applied and corrected or removed AI suggestions that were wrong or unsupported by the data.
 - No confidential, personal or restricted data was uploaded to an AI service; the data are public monitoring data.
