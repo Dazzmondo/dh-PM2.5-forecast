@@ -1958,38 +1958,9 @@ Canonical processing
 
 The architecture deliberately uses different technologies for different workloads rather than treating one database or storage system as the solution to every problem.
 
-**The implemented pipeline**, from the sources to the reports (arrows show the files one step hands to the next):
+![Pipeline diagram: sources (UK-AIR, EEA, EPA Ireland), ingest scripts into raw_data/, raw archive in Google Cloud Storage, validate, transform, processed datasets in Google Cloud Storage, and outputs (checks, EDA, baseline, reports, Milestone 3 inputs)](docs/images/m2_pipeline_diagram.png)
 
-```
-SOURCE     UK-AIR (Defra)            EEA Air Quality Download     EPA Ireland (airquality.ie)
-           .RData files              Service API, Parquet         readings pages, CSV
-               |                              |                           |
-               v                              v                           v
-INGEST     download_ukair.py          download_eea.py            download_epa.py
-           (+ download_source_metadata.py: EEA station metadata)
-                                      |
-                                      v
-           raw_data/   original files, never edited
-                                      |
-                                      v
-STORE      upload_raw_data.py  ->  GCS raw/  +  manifests/raw_files.jsonl (SHA-256 per file)
-                                      |
-                                      v
-VALIDATE   canonicalize_raw_data.py -> processed_data/canonical_hourly.parquet
-              (parse, match files to stations, UTC, trim to 2018+, above-500 rule; stops on bad files)
-           validate_data_quality.py -> quality_reports/  (reports only)
-                                      |
-                                      v
-TRANSFORM  aggregate_to_3hour.py -> feature_extraction.py -> create_splits.py -> fit_scalers.py
-              (3-hour blocks -> lags, rolling statistics, target -> split labels -> train-only scalers)
-                                      |
-                                      v
-STORE      store_preprocessed_data.py -> GCS processed/  +  manifests/dataset_versions.jsonl
-                                      |
-                                      v
-OUTPUT     check_*.py, eda_*.py, baseline_persistence.py -> reports/ (tables, figures)
-           split datasets (train, dev, test, held-out) for Milestone 3
-```
+*Pipeline diagram (image generated with ChatGPT from a description of the pipeline). Arrows show the files one step hands to the next.*
 
 The raw files are stored (in `raw_data/` and in the bucket) before any validation, so the original is kept unchanged whatever the validation decides; every later stage reads the stored copy and writes a new file. Scripts hand data to each other only through files, so any step can be re-run alone. Only `upload_raw_data.py` and `store_preprocessed_data.py` talk to the cloud.
 
@@ -2081,7 +2052,7 @@ These questions were left open in Milestone 1. Each was answered from training a
 
 **Tools and purpose.**
 - **Claude** (Sonnet 5 and Sonnet 5.5) was used as a coding and writing assistant: to turn my design decisions into Python scripts, to run analyses I specified, and to draft the README and this report from my instructions.
-- **ChatGPT** was used to discuss design choices, analyse code and review Claude's recommendations, and to assess drafts of this report against the marking rubric.
+- **ChatGPT** was used to discuss design choices, analyse code and review Claude's recommendations, and to assess drafts of this report against the marking rubric, and to generate the image of the pipeline diagram from a description of the pipeline.
 
 **Who decided what.**
 - **The design and the creative decisions were mine.** The research questions, the target (a 3-hour mean six hours ahead), the choice of cities and monitoring stations, the three data sources, the choice of Google Cloud Storage and Parquet, the chronological and held-out-city split design, and the decision to treat generalisation to unseen cities as the central question came from me. The larger Milestone 2 decisions also came from me: what to investigate, what counts as acceptable evidence, which rules to keep simple, and which suggestions to reject.
