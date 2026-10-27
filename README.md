@@ -1125,6 +1125,26 @@ This distinction is important: **data type and storage format are not the same t
 
 For example, PM2.5 is numerical time-series data, while Parquet is a storage format used to represent that data efficiently.
 
+### Data dictionary
+
+The role of each field, and the trap to record for it:
+
+| Field | Type | Role | Meaning | Trap to record |
+|---|---|---|---|---|
+| `station_id` | text | Identifier (key) | EU station code, one per monitoring station | Never averaged or used as a model input in the baseline; Spain's EEA files use national codes, mapped through the station table |
+| `city`, `country` | text | Grouping variable | Place of the station | Used for grouping in validation (leave-one-city-out); Great Britain is represented by Belfast only |
+| `source`, `timezone` | text | Metadata | Data source; IANA time-zone name used to convert UTC to local time | Not model inputs |
+| `latitude`, `longitude` | decimal degrees | Static station attribute | Station position | Constant per station, so it can act as a station identifier; used only in the named ablation |
+| `timestamp_utc`, `block_start_utc` | datetime, UTC | Time key | Start of the hour or of the 3-hour block | Labels the start of the interval; EPA and EEA files needed a one-hour shift |
+| `pm25` | decimal, ug/m3 | Measurement (hourly) | Hourly mean PM2.5 | Negatives kept; values above 500 set to missing by a rule; EPA values unvalidated |
+| `pm25_3h_mean`, `valid_hours` | decimal; integer 2 to 3 | Aggregate and its support | Mean of the valid hours in the block | A block with fewer than 2 valid hours is missing, never filled |
+| `pm25_current`, `pm25_lag_1..3` | decimal, ug/m3 | Model input | Block means known when the forecast is issued | Available only after the current block ends |
+| `pm25_rolling_mean`, `pm25_rolling_std` | decimal, ug/m3 | Model input | Mean and spread over 8 blocks (24 hours) | The window includes the current block |
+| `target_pm25` | decimal, ug/m3 | Target | Mean of the block two blocks later | Known only afterwards; never an input |
+| `local_timestamp` | datetime (local, no zone) | Source for time features | Block start on the station's local clock | Daylight saving shifts it by one hour |
+| `time_block`, `day_of_week`, `month` | integer | Label (not a model input) | Local-time labels | `time_block` is the bin in which the block starts, and it flips at Athens in summer; `season` is dropped (it repeats the month) |
+| `split` | text | Bookkeeping label | train, dev, test, held_out_test, future_update or excluded | Not a feature; excluded rows are never used |
+
 ---
 
 # 9. Reproducibility of Data Collection — 1.0 point
@@ -1854,6 +1874,45 @@ GCP_PROJECT_ID and GCS_BUCKET_NAME are not set. Set them as environment variable
 The exit code was 1 and nothing was uploaded.
 
 **Repeatable outputs.** The local steps (`canonicalize_raw_data.py` to `fit_scalers.py`) were run twice from an empty `processed_data/`, and the SHA-256 of every output file was identical between the two runs: the canonical table, the 3-hour table, the feature table with splits, and the four quality reports. `scalers.json` differs only in its `created_utc` field. The hashes of the canonical table (`8b9a0831...`), the 3-hour table (`f3d9209d...`) and the feature table (`b2cd1f6e...`) equal those in the stored dataset record, so the stored files are what the code produces. The downloads depend on live sources (EPA Ireland's data are provisional and may be revised) and are not repeated this way; what fixes the input of a run is the raw manifest, whose checksums (and their hash, `raw_data_version`) identify exactly which raw files were used.
+
+## Quality dimensions, leakage prevention and pipeline qualities
+
+**Data quality dimensions.**
+
+| Dimension | What is checked | Evidence in this report |
+|---|---|---|
+| Completeness | Valid share per station-year against a 75% flag; 3-hour blocks need 2 of 3 valid hours | 5 of 112 station-years flagged; 19,696 blocks missing |
+| Validity | EEA Validity flags 1, 2 and 3 only; negative readings; values above 500 | 30,725 invalid EEA rows set to missing; 5,663 negatives kept; 7 values above 500 set to missing |
+| Uniqueness | One value per station-hour; conflicting duplicates stop the run | Duplicate check in `validate_data_quality.py`; the stops shown under "Example output and repeatability" |
+| Consistency | Timestamp conventions, station matching by folder and name, scripted against manual downloads | UK-AIR `.RData` against the website CSVs for 32 station-years |
+| Timeliness | Data cover 2018 to 2025; EPA data are provisional | 2026 reserved for the update demonstration |
+
+**Leakage prevention.**
+
+| Leakage type | How it is prevented | Where |
+|---|---|---|
+| Target | Features use only the current and earlier blocks; the target block never enters a feature | `feature_extraction.py` |
+| Train-test contamination | Scalers are fitted on the train split only; thresholds come from the decision pool; the corroboration medians use data before 2025 | `fit_scalers.py`, the high-value rule |
+| Temporal | Chronological split (train to 2023, dev 2024, test 2025); a row whose input and target blocks fall in different periods is excluded, so overlapping windows never cross a boundary | `create_splits.py` |
+| Entity | Held-out cities never enter train, dev or test (checked). Known stations do appear in all three splits by design, because the question for them is forecasting the future; generalisation to unseen cities is measured only on the held-out cities | `create_splits.py`, the station-differences analysis |
+| Duplicate | One row per station-hour; conflicting duplicates stop the run | `canonicalize_raw_data.py` |
+
+**Not yet applied (Milestone 3):** cross-validation must be time-aware and grouped by city, and preprocessing must be refitted inside every fold. The saved `scalers.json` is fitted on the whole train split, so it is used only for the final train, dev and test evaluation. Using it inside the folds would let each fold's validation rows influence its scaling.
+
+**Pipeline qualities.**
+
+| Quality | In this project |
+|---|---|
+| Repeatable | Identical output hashes across two runs |
+| Idempotent | The upload skips unchanged files; processed files are rewritten with the same content; the store step appends one manifest line per run as a record, by design |
+| Observable | Scripts print counts and write reports; manifests record every run. There is no logging service or run dashboard |
+| Testable | End-to-end runs, the feature-rebuild check, triggered stops and `pyflakes`. There are no unit tests |
+| Fails loudly | Structural errors stop the run; value-level problems are counted and kept as missing |
+| Cost-aware | Batch only, one EU bucket, a 7-day rule on old versions, files of tens of megabytes, no cluster |
+
+**Layers.** `raw/` is the raw layer (never edited); `processed/canonical` and `three_hour` are the clean layer; `processed/features`, `splits` and `scalers` are the curated layer. Blocks follow event time in UTC (when the reading was true), not when it was downloaded.
+
+**Composition.** Pooled scores can hide composition: Athens, Madrid and Belfast carry about 61% of the training and development rows, so a pooled score mostly reflects them. That is why every pooled score is reported with per-station scores, and with and without Cork UCC.
 
 ---
 
