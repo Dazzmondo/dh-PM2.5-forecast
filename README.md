@@ -2023,6 +2023,8 @@ The architecture deliberately uses different technologies for different workload
 
 The raw files are stored (in `raw_data/` and in the bucket) before any validation, so the original is kept unchanged whatever the validation decides; every later stage reads the stored copy and writes a new file. Scripts hand data to each other only through files, so any step can be re-run alone. Only `upload_raw_data.py` and `store_preprocessed_data.py` talk to the cloud.
 
+**ETL or ELT.** The pipeline is a mix. The raw layer is loaded into the bucket unchanged and first (the ELT idea of keeping the original, so a rule can be changed and the later layers rebuilt), while the processed layers are transformed in Python before they are loaded (ETL), which keeps every transformation in reviewable code that can be re-run. A warehouse step is not needed at this size.
+
 **Automated and manual.** Every step from the downloads to the figures is a script run by hand, one command per step; there is no scheduler or orchestration tool, because the data are historical and the pipeline is run on request. The only manual actions are signing in to Google Cloud (`gcloud auth application-default login`), setting the two environment variables, and taking the console screenshots used as storage evidence.
 
 ---
