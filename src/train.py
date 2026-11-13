@@ -53,7 +53,8 @@ from xgboost import XGBRegressor
 from config import REPO_ROOT
 from m3_data import (CORK_UCC, EXPECTED_PERSISTENCE_DEV_MAE, build_features, expanding_folds, inner_early_stopping_split,
                      load_rows, loco_folds, mae_rmse, place_features, rows_hash)
-from m3_tracking import lineage_tags, peak_ram_mb, pip_freeze_text, setup_experiment
+from fit_scalers import SCALER_PATH
+from m3_tracking import lineage_tags, peak_ram_mb, pip_freeze_text, setup_experiment, sha256_of_file
 
 BASELINE_COLUMNS = {"persistence": "pm25_current",          # the current block is the forecast
                     "rolling_mean": "pm25_rolling_mean",    # the existing 8-block mean is the forecast
@@ -63,6 +64,34 @@ DEFAULTS = {"settings": ["F", "D"], "feature_set": "A", "time_features": "cyclic
             "place": "none", "seed": 0, "params": {}, "threads": None}
 XGBOOST_DEFAULTS = {"tree_method": "hist", "n_estimators": 500, "learning_rate": 0.1, "max_depth": 6, "objective": "reg:squarederror"}
 MODELS_DIR = REPO_ROOT / "models"
+
+
+def check_scaler_consistency(model, columns: list, fit_rows: int) -> dict:
+    """Prove that a Ridge model's in-model scaler equals the stored scalers.json for the columns they share; return lineage tags.
+
+    The scalers are fitted INSIDE the model (so cross-validation can fit them on each fold's training rows only). For the final fit,
+    on the whole training split, they must equal the stored artefact (fit_scalers.py, `standard` variant: concentration and spread
+    groups, population standard deviation, the same 123,364 rows). The run stops if the row count or any mean/std differs.
+    """
+    artefact = json.loads(SCALER_PATH.read_text(encoding="utf-8"))
+    if artefact["fitted_on"]["rows"] != fit_rows:
+        raise SystemExit(f"SCALER CHECK FAILED: scalers.json was fitted on {artefact['fitted_on']['rows']} rows, the model on {fit_rows}.")
+    stored = {}
+    for group in ("concentration", "spread"):
+        stored.update(artefact["variants"]["standard"][group])
+    scaler = model.named_steps["standardscaler"]
+    checked, worst = [], 0.0
+    for index, column in enumerate(columns):
+        if column not in stored:                           # the sin/cos columns have no stored statistics
+            continue
+        for fitted, saved, what in ((scaler.mean_[index], stored[column]["mean"], "mean"), (scaler.scale_[index], stored[column]["std"], "std")):
+            if not np.isclose(fitted, saved, rtol=1e-9, atol=1e-12):
+                raise SystemExit(f"SCALER CHECK FAILED: {column} {what} is {fitted!r} in the model but {saved!r} in scalers.json.")
+            worst = max(worst, abs(fitted - saved))
+        checked.append(column)
+    print(f"Scaler check passed: the model's fitted mean and std equal scalers.json for {len(checked)} columns (largest difference {worst:.1e}).")
+    return {"scaler_check": "passed", "scaler_check_columns": ",".join(checked), "scaler_check_max_abs_diff": f"{worst:.3e}",
+            "scaler_artefact_sha256": sha256_of_file(SCALER_PATH), "scaler_artefact_features_file_sha256": artefact["fitted_on"]["features_file_sha256"]}
 
 
 def load_config(path: Path) -> dict:
@@ -256,13 +285,15 @@ def main():
     print(f"{cfg['experiment']} / {cfg['run_name']}: model {cfg['model']}, feature set {cfg['feature_set']}, time {cfg['time_features']}, "
           f"target {cfg['target']}, scaling {cfg['scaling']}, place {cfg['place']}, seed {cfg['seed']}  (data load {load_seconds:.1f}s)")
 
-    results, metrics, tables = {}, {}, []
+    results, metrics, tables, scaler_tags = {}, {}, [], {}
     for setting in cfg["settings"]:
         results[setting] = run_setting(cfg, rows, X, setting)
         metrics.update(summarise(setting, results[setting]))
         tables.extend(results[setting]["tables"])
         if setting == "D":
             check_persistence_benchmark(rows)
+            if cfg["model"] == "ridge" and cfg["scaling"] == "standard":
+                scaler_tags = check_scaler_consistency(results["D"]["model"], list(X.columns), int((rows["split"] == "train").sum()))
     fit_seconds = sum(i["fit_seconds"] for r in results.values() for i in r["info"].values())
     predict_seconds = sum(i["predict_seconds"] for r in results.values() for i in r["info"].values())
     n_predicted = sum(m["n_val"] for r in results.values() for m in r["metrics"].values())
@@ -274,7 +305,7 @@ def main():
 
     setup_experiment(cfg["experiment"])
     with mlflow.start_run(run_name=cfg["run_name"]) as run:
-        tags = lineage_tags()
+        tags = {**lineage_tags(), **scaler_tags}
         mlflow.set_tags(tags)
         mlflow.log_params({k: str(v) for k, v in cfg.items() if k != "params"})
         mlflow.log_params({f"param.{k}": str(v) for k, v in cfg["params"].items()})

@@ -102,7 +102,7 @@ def machine_description() -> dict:
 def lineage_tags() -> dict:
     """Everything that identifies the code, data, environment and machine behind a run."""
     versions = library_versions()
-    tags = {"git_commit": git_commit(),
+    tags = {"git_commit": os.environ.get("GIT_COMMIT") or git_commit(),      # inside Docker there is no .git: the commit is a build argument
             "features_file_sha256": sha256_of_file(FEATURES_PATH),
             "block_table_sha256": sha256_of_file(BLOCKS_PATH),
             "dataset_run_id": os.environ.get("DATASET_RUN_ID", "not set"),
