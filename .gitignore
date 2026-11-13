@@ -26,3 +26,6 @@ Thumbs.db
 raw_data/
 metadata/source_metadata/
 
+# --- M3 ---
+mlruns/
+models/

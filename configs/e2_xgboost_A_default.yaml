@@ -1,0 +1,13 @@
+# E2: XGBoost with default settings on feature set A (the reference every tuned configuration is compared with).
+experiment: m3_features
+run_name: xgboost_A_default
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6

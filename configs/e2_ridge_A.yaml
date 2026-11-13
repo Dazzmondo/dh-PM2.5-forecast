@@ -1,0 +1,12 @@
+# E2: Ridge on feature set A (the Milestone 2 baseline inputs), standardised inside each fold, absolute target.
+experiment: m3_features
+run_name: ridge_A_standard_absolute
+model: ridge
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: standard
+seed: 0
+params:
+  alpha: 1.0

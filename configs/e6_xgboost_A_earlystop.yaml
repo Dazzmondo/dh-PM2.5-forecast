@@ -1,0 +1,14 @@
+# E6a: XGBoost with early stopping on an inner window (last 12 months of each fold's training rows); logs the learning curves.
+experiment: m3_features
+run_name: xgboost_A_earlystop
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+seed: 0
+params:
+  n_estimators: 2000
+  learning_rate: 0.05
+  max_depth: 6
+  early_stopping_rounds: 50

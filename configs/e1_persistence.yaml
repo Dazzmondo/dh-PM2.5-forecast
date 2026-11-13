@@ -1,0 +1,5 @@
+# E1 baseline: persistence (nothing is fitted). Scored on the three selection folds (F) and the 31,192 development rows (D).
+experiment: m3_baselines
+run_name: persistence
+model: persistence
+settings: [F, D]

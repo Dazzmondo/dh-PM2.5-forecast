@@ -1,29 +1,32 @@
+# Exact versions of the environment the results were produced in (Python 3.14.2). One requirements file only.
+
 # Core data handling
-numpy>=1.26
-pandas>=2.2
-pyarrow>=14.0        # Parquet read/write
-gcsfs>=2024.2         # lets pandas read/write gs:// paths directly
-tzdata>=2024.1        # IANA timezone database - required by zoneinfo on Windows
+numpy==2.5.3
+pandas==3.0.6
+pyarrow==25.0.1        # Parquet read/write
+gcsfs==2026.10.0       # lets pandas read/write gs:// paths directly
+tzdata==2026.4         # IANA timezone database - required by zoneinfo on Windows
 
 # Plotting / EDA
-matplotlib>=3.8
+matplotlib==3.11.2
 
-# Modelling
-scikit-learn>=1.4
-xgboost>=2.0
-# torch is only needed if/when the optional GRU/LSTM stage is attempted -
-# leave commented out until that stage is actually started
-# torch>=2.2
+# Modelling (Milestone 3)
+scikit-learn==1.9.1
+xgboost==3.4.1
+torch==2.15.0          # the GRU; the CPU build is installed by default on Windows
+optuna==5.0.0          # hyperparameter search (random search vs TPE)
+mlflow==3.18.0         # experiment tracking (local store in mlruns/)
+PyYAML==6.0.3          # experiment configuration files (configs/*.yaml)
 
 # GCS / GCP access
-google-cloud-storage>=2.16
+google-cloud-storage==3.16.0
 # google-cloud-bigquery is only needed if the optional BigQuery analytical
 # layer is actually implemented - not required to load raw/processed data
 # google-cloud-bigquery>=3.17
 
 # HTTP (for whichever sources end up automatable)
-requests>=2.31
-rdata>=1.1.0         # reads the UK-AIR .RData files (R data files)
+requests==2.34.2
+rdata==1.1.0           # reads the UK-AIR .RData files (R data files)
 
 # M4 serving (not needed until the API/deployment stage)
 # fastapi>=0.110
