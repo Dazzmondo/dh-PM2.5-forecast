@@ -1,0 +1,12 @@
+# E9 tuning: a small grid for the GRU on ONE selection fold (train 2018-2022, validate 2023), one seed.
+# 2 x 2 x 3 = 12 configurations; early stopping on an inner window; max 50 epochs.
+experiment: m3_neural
+run_name: gru_grid
+grid:
+  hidden_size: [32, 64]
+  dropout: [0.0, 0.2]
+  lr: [0.001, 0.003, 0.01]
+seeds: [0]
+loss: mse
+max_epochs: 50
+patience: 7

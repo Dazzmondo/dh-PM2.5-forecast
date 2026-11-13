@@ -1,0 +1,11 @@
+# E7: random search vs TPE for XGBoost, same search space, folds, metric and budget; seeds 0, 1, 2 for both samplers.
+# Objective: mean seen-station MAE over the selection folds (validation years 2021, 2022, 2023); early stopping on an inner window.
+experiment: m3_hpo
+feature_set: A
+time_features: cyclical
+target: absolute
+samplers: [random, tpe]
+seeds: [0, 1, 2]
+n_trials: 50
+early_stopping_rounds: 50
+n_estimators: 2000

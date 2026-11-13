@@ -1,0 +1,21 @@
+# E11: compute benchmark. XGBoost CPU thread scaling (1, 2, 4, 8 threads), XGBoost CPU vs GPU, and the GRU on CPU vs GPU.
+# Every run fits the whole training split with no early stopping (so run lengths match) and predicts the 31,192 development rows.
+# Run it on each machine being compared, from the same image:  python src/benchmark.py --config configs/compute_benchmark.yaml --machine-type <type>
+experiment: m3_benchmark
+feature_set: A
+time_features: cyclical
+repeats: 5
+seed: 0
+threads: [1, 2, 4, 8]
+xgb_configs:
+  default: {n_estimators: 500, learning_rate: 0.1, max_depth: 6}
+  large: {n_estimators: 2000, learning_rate: 0.05, max_depth: 10}
+gru:
+  hidden_size: 32
+  num_layers: 1
+  dropout: 0.0
+  lr: 0.003
+  batch_size: 256
+gru_epochs: 10
+gru_repeats: 3
+gru_cpu_threads: 4
