@@ -1,0 +1,13 @@
+# E4b: ridge with a one-hot encoding of the UTC block (0-7) instead of the cyclical time features.
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: ridge_A_time_onehot_utc
+model: ridge
+settings: [F, D]
+feature_set: A
+time_features: onehot_utc
+target: absolute
+scaling: standard
+seed: 0
+params:
+  alpha: 1.0

@@ -1,0 +1,16 @@
+# E6c: the two adopted changes together: log1p target (E3) and the absolute-error objective (E6b), on the XGBoost reference.
+# Everything else is as in the reference configuration (feature set A, cyclical time features, depth 6, learning rate 0.1).
+experiment: m3_features
+run_name: xgboost_A_log1p_absolute_error
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: log1p
+scaling: none
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6
+  objective: reg:absoluteerror

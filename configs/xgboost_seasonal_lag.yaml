@@ -1,0 +1,15 @@
+# E4a: xgboost on feature set A+S (A plus pm25_lag_6, the same clock time as the target one day earlier).
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: xgboost_AS
+model: xgboost
+settings: [F, D]
+feature_set: A+S
+time_features: cyclical
+target: absolute
+scaling: none
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6

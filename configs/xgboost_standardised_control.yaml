@@ -1,0 +1,16 @@
+# E5 control: XGBoost with standardised features (the unscaled reference is xgboost_default_feature_set_a.yaml).
+# Trees only compare a feature with a threshold, so a monotone rescaling should change nothing (apart from floating-point binning);
+# this run checks that, and shows why the XGBoost configurations are not standardised.
+experiment: m3_features
+run_name: xgboost_A_standardised
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: standard
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6

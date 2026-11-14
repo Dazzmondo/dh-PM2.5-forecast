@@ -1,0 +1,12 @@
+# E7b: the E7 search repeated with the adopted training objective (reg:absoluteerror, E6b), because E7 tuned the squared-error model.
+# Same space, folds, metric, seeds and budget as hpo_random_vs_tpe.yaml; the log1p target is not used (E6c: no further gain).
+experiment: m3_hpo_absolute_error
+feature_set: A
+time_features: cyclical
+target: absolute
+objective: reg:absoluteerror
+samplers: [random, tpe]
+seeds: [0, 1, 2]
+n_trials: 50
+early_stopping_rounds: 50
+n_estimators: 2000

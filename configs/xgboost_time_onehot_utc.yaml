@@ -1,0 +1,15 @@
+# E4b: xgboost with a one-hot encoding of the UTC block (0-7) instead of the cyclical time features.
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: xgboost_A_time_onehot_utc
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: onehot_utc
+target: absolute
+scaling: none
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6

@@ -15,7 +15,8 @@ Configuration keys (all but `experiment`, `run_name` and `model` are optional):
   feature_set     A | A+S | B                       (default A)
   time_features   cyclical | onehot_utc | none      (default cyclical)
   target          absolute | change | log1p         (default absolute; scores are always on the raw ug/m3 scale)
-  scaling         none | standard                   (Ridge; the scaler is fitted inside each fold's training rows)
+  scaling         none | standard                   (the scaler is fitted inside each fold's training rows; for XGBoost it is only a
+                                                     control, as trees ignore monotone rescaling of a feature)
   place           none | latlon | country | all     (default none; used with setting L)
   seed            integer (default 0)
   params          model hyperparameters (Ridge: alpha; XGBoost: any XGBRegressor argument, plus early_stopping_rounds)
@@ -150,6 +151,10 @@ def fit_predict(cfg: dict, rows: pd.DataFrame, X: pd.DataFrame, fold):
         return val[BASELINE_COLUMNS[cfg["model"]]].to_numpy(), {"fit_seconds": 0.0, "predict_seconds": 0.0}, None
 
     X = pd.concat([X, place_features(rows, fold.fit, cfg["place"])], axis=1)
+    if cfg["model"] == "xgboost" and cfg["scaling"] == "standard":
+        # the E5 control: standardise with the fold's training rows only, then train as usual (results should match the unscaled run)
+        scaler = StandardScaler().fit(X[fold.fit])
+        X = pd.DataFrame(scaler.transform(X), index=X.index, columns=X.columns)
     y = to_model_target(rows["target_pm25"], rows["pm25_current"], cfg["target"])     # whole column; masked below
     info, rounds = {}, None
     t0 = time.perf_counter()
@@ -277,6 +282,8 @@ def main():
     cfg = load_config(args.config)
     if args.save_model and "D" not in cfg["settings"]:
         raise SystemExit("--save-model needs setting D (the model fitted on the whole training split).")
+    if args.save_model and cfg["model"] == "xgboost" and cfg["scaling"] == "standard":
+        raise SystemExit("--save-model is not available for the standardised XGBoost control (the scaler would not be saved with the model).")
 
     t_start = time.perf_counter()
     rows = load_rows()                                      # train and dev only; windows rebuilt and verified

@@ -19,6 +19,7 @@ import os
 import platform
 import sys
 from importlib import metadata
+from pathlib import Path
 
 import mlflow
 
@@ -87,9 +88,22 @@ def library_versions() -> dict:
     return versions
 
 
+def cpu_model() -> str:
+    """The CPU's name. platform.processor() is empty in Linux containers, so /proc/cpuinfo is read there."""
+    name = platform.processor()
+    if not name and sys.platform.startswith("linux"):
+        try:
+            for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+                if line.lower().startswith("model name"):
+                    return line.split(":", 1)[1].strip()
+        except OSError:
+            pass
+    return name or "unknown"
+
+
 def machine_description() -> dict:
     """CPU, cores, RAM and GPU of this machine (for the compute comparison)."""
-    info = {"machine": platform.node(), "os": platform.platform(), "cpu": platform.processor(), "logical_cores": os.cpu_count()}
+    info = {"machine": platform.node(), "os": platform.platform(), "cpu": cpu_model(), "logical_cores": os.cpu_count()}
     try:
         import torch
         info["gpu"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none"

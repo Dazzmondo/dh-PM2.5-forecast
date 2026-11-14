@@ -2,7 +2,7 @@
 Compute benchmark (Milestone 3): how long do XGBoost and the GRU take on this machine, on how many CPU threads, on CPU or GPU?
 
 USAGE:  python src/benchmark.py --config configs/compute_benchmark.yaml [--only xgb_threads xgb_device gru_device] [--no-tracking]
-                                [--machine-type n1-standard-8] [--region europe-west4] [--physical-cores 4] [--hourly-rate 0.38]
+                                [--machine-type n1-standard-8] [--region europe-west4] [--physical-cores 4] [--hourly-rate 0.38] [--cpu-only-rate 0.38]
 INPUT:  the configuration, and via m3_data.py the train and dev rows (the test split and held-out stations are never read)
 OUTPUT: one MLflow run in experiment `m3_benchmark` (every repeat as a metric step, the summary tables as artefacts, the machine and
         image as tags) and the summary tables printed. Run it on each machine being compared, from the same image.
@@ -158,7 +158,10 @@ def main():
     parser.add_argument("--machine-type", default="local", help="e.g. n1-standard-8 (tagged on the run)")
     parser.add_argument("--region", default="", help="cloud region (tagged on the run)")
     parser.add_argument("--physical-cores", type=int, help="physical CPU cores (the logical count alone cannot show hyperthreading)")
-    parser.add_argument("--hourly-rate", type=float, help="price of this machine per hour; adds the approximate cost of a fit and of the run")
+    parser.add_argument("--hourly-rate", type=float, help="price of this machine per hour (the machine actually used, GPU included); adds the "
+                        "approximate cost of a fit and of the run")
+    parser.add_argument("--cpu-only-rate", type=float, help="price per hour of the same machine WITHOUT a GPU; the cost of CPU fits is then "
+                        "taken at this rate (a CPU run would not need the GPU machine), and GPU fits at --hourly-rate")
     args = parser.parse_args()
     cfg = {**DEFAULTS, **yaml.safe_load(args.config.read_text(encoding="utf-8"))}
     cfg["gru_hp"] = {**DEFAULTS["gru"], **cfg.get("gru", {})}
@@ -215,7 +218,9 @@ def main():
     table = summarise(records)
     total_seconds = time.perf_counter() - t_start
     if args.hourly_rate:
-        table["approx_cost_per_fit"] = args.hourly_rate * table["fit_median"] / 3600
+        cpu_rate = args.cpu_only_rate or args.hourly_rate
+        is_gpu = table["variant"].isin(["cuda"])
+        table["approx_cost_per_fit"] = np.where(is_gpu, args.hourly_rate, cpu_rate) * table["fit_median"] / 3600
     amdahl = amdahl_fraction(table)
     print("\nSummary (fit times in seconds; speed-up and efficiency relative to the fewest threads):")
     print(table.drop(columns=["model_size_bytes"]).round(3).to_string(index=False))

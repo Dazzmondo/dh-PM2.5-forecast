@@ -45,7 +45,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 SAMPLERS = {"random": optuna.samplers.RandomSampler, "tpe": optuna.samplers.TPESampler}
 HPO_DEFAULTS = {"experiment": "m3_hpo", "feature_set": "A", "time_features": "cyclical", "target": "absolute",
                 "samplers": ["random", "tpe"], "seeds": [0, 1, 2], "n_trials": 50, "early_stopping_rounds": 50,
-                "n_estimators": 2000, "threads": None}
+                "n_estimators": 2000, "threads": None, "objective": None}
 DEFAULT_PARAMS = {k: XGBOOST_DEFAULTS[k] for k in ("learning_rate", "max_depth")}     # the reference configuration: lr 0.1, depth 6
 
 
@@ -63,8 +63,9 @@ def suggest(trial: optuna.Trial) -> dict:
 
 def model_config(hpo: dict, params: dict, seed: int) -> dict:
     """The train.py-style configuration for XGBoost with these hyperparameters, early stopping on and the given seed."""
+    extra = {"objective": hpo["objective"]} if hpo["objective"] else {}        # e.g. reg:absoluteerror; default is squared error
     return {"model": "xgboost", "target": hpo["target"], "scaling": "none", "place": "none", "seed": seed, "threads": hpo["threads"],
-            "params": {**params, "n_estimators": hpo["n_estimators"], "early_stopping_rounds": hpo["early_stopping_rounds"]}}
+            "params": {**params, **extra, "n_estimators": hpo["n_estimators"], "early_stopping_rounds": hpo["early_stopping_rounds"]}}
 
 
 def evaluate(hpo: dict, params: dict, seed: int, rows: pd.DataFrame, X: pd.DataFrame, folds: list) -> dict:

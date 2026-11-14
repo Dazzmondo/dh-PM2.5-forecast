@@ -1,0 +1,15 @@
+# E4c: xgboost on feature set B (the 8 raw block values t-7 ... t instead of lags 1-3 and rolling statistics).
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: xgboost_B
+model: xgboost
+settings: [F, D]
+feature_set: B
+time_features: cyclical
+target: absolute
+scaling: none
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6

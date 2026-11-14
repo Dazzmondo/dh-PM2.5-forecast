@@ -1,0 +1,6 @@
+run,model,F_mean_mae,D_mae,D_skill,family,F_mean_mae_vs_reference_pct,D_mae_vs_reference_pct
+seasonal_naive,seasonal_naive,4.79039148167026,4.705730112421988,-0.2163311864860542,baseline,,
+persistence,persistence,4.130885933481099,3.8687901491835515,0.0,baseline,,
+rolling_mean,rolling_mean,3.9582370488714322,3.8526352951077194,0.004175686313521387,baseline,,
+ridge_A_standard_absolute,ridge,3.612011842869304,3.471339848937965,0.10273245250313257,ridge,0.0,0.0
+xgboost_A_default,xgboost,3.5124021781700776,3.29457254710044,0.1484230418143231,xgboost,0.0,0.0

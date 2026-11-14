@@ -22,7 +22,8 @@ the same seed on ALL the fold's training rows for the epoch count phase 1 chose.
 every fit trains exactly N epochs (used for the CPU vs GPU timing, so run lengths match).
 
 Two modes, chosen by the configuration:
-  tuning  (`grid:` present)  a small grid on ONE fold (train 2018-2022, validate 2023), one seed, at most 12 configurations
+  tuning  (`grid:` present)  a small grid on ONE fold (train 2018-2022, validate 2023), one seed, at most 12 configurations;
+                             `loss` (mse or l1) may be a grid axis, like the hyperparameters
   final   (`seeds:` list)    the chosen hyperparameters on the settings listed (F, D), one MLflow run per seed, plus a summary run
 
 Requires: pip install pandas pyarrow numpy torch mlflow pyyaml
@@ -319,12 +320,15 @@ def main():
         print(f"Tuning grid: {len(configs)} configurations on fold F2023 (train 2018-2022, validate 2023), seed {cfg['seeds'][0]}")
         scores = []
         for i, point in enumerate(configs):
-            hp = {**HP_DEFAULTS, **cfg["hp"], **point}
+            hp = {**HP_DEFAULTS, **cfg["hp"], **{k: v for k, v in point.items() if k != "loss"}}
+            point_cfg = {**cfg, "loss": point.get("loss", cfg["loss"])}            # the loss function is a grid axis too
+            if point_cfg["loss"] not in ("mse", "l1"):
+                raise SystemExit("loss must be mse or l1.")
             print(f"  config {i + 1}/{len(configs)}: {point}")
-            result = run_settings(cfg, hp, cfg["seeds"][0], device, rows, sequence, static, folds_by_name)
+            result = run_settings(point_cfg, hp, cfg["seeds"][0], device, rows, sequence, static, folds_by_name)
             if tracking:
                 with mlflow.start_run(run_name=f"{cfg['run_name']}_grid{i:02d}"):
-                    metrics = log_run(cfg, hp, cfg["seeds"][0], result, device, rows, load_seconds, t_start, False)
+                    metrics = log_run(point_cfg, hp, cfg["seeds"][0], result, device, rows, load_seconds, t_start, False)
             else:
                 metrics = {"F2023_mae_seen": result["settings"]["F2023"]["metrics"]["F2023"]["mae_seen"]}
             scores.append({**point, "F2023_mae_seen": metrics["F2023_mae_seen"], "epochs": result["settings"]["F2023"]["info"]["F2023"]["rounds"]})

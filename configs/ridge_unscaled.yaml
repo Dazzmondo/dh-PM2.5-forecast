@@ -1,0 +1,13 @@
+# E5: Ridge without standardisation (the scaled reference is ridge_feature_set_a.yaml).
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: ridge_A_unscaled
+model: ridge
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: none
+seed: 0
+params:
+  alpha: 1.0

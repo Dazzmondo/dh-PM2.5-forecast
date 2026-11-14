@@ -1,0 +1,13 @@
+# E3: ridge predicts the CHANGE from the current block (forecast = current + predicted change).
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: ridge_A_target_change
+model: ridge
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: change
+scaling: standard
+seed: 0
+params:
+  alpha: 1.0

@@ -1,0 +1,13 @@
+# E4b: ridge with no time-of-day or season features.
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: ridge_A_time_none
+model: ridge
+settings: [F, D]
+feature_set: A
+time_features: none
+target: absolute
+scaling: standard
+seed: 0
+params:
+  alpha: 1.0

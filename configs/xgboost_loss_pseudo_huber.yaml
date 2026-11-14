@@ -1,0 +1,20 @@
+# E6b: XGBoost trained with the pseudo-Huber objective (scored on MAE like every run).
+# This objective takes bounded steps (at most huber_slope per round) from base_score, so both are set once, in advance, on the scale of
+# the data: base_score 10 (about the mean training target, 10.3 ug/m3) and huber_slope 5 (about the typical error: MAE 3-4, RMSE 6-7).
+# Everything else is as in the reference configuration of the same model (feature set A, cyclical time features, absolute target).
+experiment: m3_features
+run_name: xgboost_A_loss_pseudo_huber
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: none
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6
+  objective: reg:pseudohubererror
+  base_score: 10.0
+  huber_slope: 5.0
