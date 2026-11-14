@@ -1,0 +1,36 @@
+# Seed-noise check for XGBoost (absolute-error objective): how much does the score move with the seed alone?
+# No search. Each configuration is scored with seeds 0-4 exactly as a search trial is (objective = mean seen-station MAE over the three
+# selection folds, early stopping on an inner window, cap 2000 rounds), then once on 2024.
+#   start_values            the starting configuration (no subsampling, so the seed should change nothing)
+#   e7b_best_tpe_seed1,
+#   e7b_best_random_seed1   the best configurations of two E7b studies (hyperparameters copied from their MLflow runs); these use row
+#                           and column subsampling, so the seed does change the trees. Seed 1 must reproduce the E7b scores
+#                           (objective 3.3424 / 2024 3.1465 and 3.3437 / 3.1438).
+experiment: m3_hpo_noise
+feature_set: A
+time_features: cyclical
+target: absolute
+objective: reg:absoluteerror
+seeds: [0, 1, 2, 3, 4]
+early_stopping_rounds: 50
+n_estimators: 2000
+evaluate:
+  start_values: {learning_rate: 0.1, max_depth: 6}
+  e7b_best_tpe_seed1:
+    reg_lambda: 0.04665240590193533
+    subsample: 0.6440905850080703
+    reg_alpha: 6.818276687611276
+    colsample_bytree: 0.861707659306285
+    min_child_weight: 18
+    learning_rate: 0.01192978592739497
+    max_depth: 7
+    gamma: 1.1933294735417443
+  e7b_best_random_seed1:
+    reg_lambda: 0.2219321201267234
+    subsample: 0.7574445560291543
+    reg_alpha: 4.107784588077008
+    colsample_bytree: 0.9722973779954067
+    min_child_weight: 14
+    learning_rate: 0.01185188191976558
+    max_depth: 7
+    gamma: 0.6873735207311876

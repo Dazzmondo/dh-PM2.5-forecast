@@ -20,8 +20,16 @@ The protocol (fixed before any result was seen):
 TPE draws its first 10 trials at random (Optuna's n_startup_trials), so with the same seed they are the SAME configurations as
 random search's first 10 trials; the two samplers differ from trial 11 on, and that is where the comparison is made.
 
-Search space:  learning_rate 0.01-0.3 (log)   max_depth 3-10   min_child_weight 1-20   subsample 0.5-1.0   colsample_bytree 0.5-1.0
+Search space (the default below; a configuration can replace it with a `space:` entry, see "Configuration"):
+               learning_rate 0.01-0.3 (log)   max_depth 3-10   min_child_weight 1-20   subsample 0.5-1.0   colsample_bytree 0.5-1.0
                reg_lambda 1e-3-10 (log)       reg_alpha 1e-3-10 (log)                   gamma 0-5
+
+Configuration (YAML), besides experiment, feature_set, time_features, target, objective, samplers, seeds, n_trials,
+early_stopping_rounds and n_estimators (the cap on boosting rounds):
+  space:     {parameter: {low: .., high: .., log: true|false, type: float|int}, ...}   the search space of this run; every parameter
+             must be an XGBoost hyperparameter; the whole space is logged with the run
+  evaluate:  {name: {parameter: value, ...}, ...}   NO search: each named configuration is scored with every seed in `seeds` (the
+             objective on the selection folds, then 2024 once) to measure how much the score moves with the seed alone
 Parameter importance (Optuna) describes how the sampled trials varied with each parameter; it is not a causal effect.
 
 Requires: pip install pandas pyarrow numpy scikit-learn xgboost optuna mlflow pyyaml matplotlib
@@ -45,20 +53,44 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 SAMPLERS = {"random": optuna.samplers.RandomSampler, "tpe": optuna.samplers.TPESampler}
 HPO_DEFAULTS = {"experiment": "m3_hpo", "feature_set": "A", "time_features": "cyclical", "target": "absolute",
                 "samplers": ["random", "tpe"], "seeds": [0, 1, 2], "n_trials": 50, "early_stopping_rounds": 50,
-                "n_estimators": 2000, "threads": None, "objective": None}
+                "n_estimators": 2000, "threads": None, "objective": None, "space": None, "evaluate": None}
 DEFAULT_PARAMS = {k: XGBOOST_DEFAULTS[k] for k in ("learning_rate", "max_depth")}     # the reference configuration: lr 0.1, depth 6
 
 
-def suggest(trial: optuna.Trial) -> dict:
-    """The hyperparameters of one trial, drawn from the search space above."""
-    return {"learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "max_depth": trial.suggest_int("max_depth", 3, 10),
-            "min_child_weight": trial.suggest_int("min_child_weight", 1, 20),
-            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10, log=True),
-            "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10, log=True),
-            "gamma": trial.suggest_float("gamma", 0, 5)}
+DEFAULT_SPACE = {"learning_rate": {"low": 0.01, "high": 0.3, "log": True},
+                 "max_depth": {"low": 3, "high": 10, "type": "int"},
+                 "min_child_weight": {"low": 1, "high": 20, "type": "int"},
+                 "subsample": {"low": 0.5, "high": 1.0},
+                 "colsample_bytree": {"low": 0.5, "high": 1.0},
+                 "reg_lambda": {"low": 1e-3, "high": 10, "log": True},
+                 "reg_alpha": {"low": 1e-3, "high": 10, "log": True},
+                 "gamma": {"low": 0.0, "high": 5.0}}
+XGBOOST_PARAMETERS = {"learning_rate", "max_depth", "min_child_weight", "subsample", "colsample_bytree", "colsample_bylevel", "colsample_bynode",
+                      "reg_lambda", "reg_alpha", "gamma", "max_delta_step", "max_bin"}
+
+
+def check_space(space: dict) -> None:
+    """Stop with a clear message if a search space is malformed (unknown parameter, empty range, log scale from zero)."""
+    for name, spec in space.items():
+        if name not in XGBOOST_PARAMETERS:
+            raise SystemExit(f"space: {name!r} is not a hyperparameter this script searches (use one of {sorted(XGBOOST_PARAMETERS)}).")
+        if not {"low", "high"} <= set(spec) or not spec["low"] < spec["high"]:
+            raise SystemExit(f"space: {name} needs low and high with low < high (got {spec}).")
+        if spec.get("log") and spec["low"] <= 0:
+            raise SystemExit(f"space: {name} is on a log scale, so low must be above 0 (got {spec['low']}).")
+        if spec.get("type", "float") not in ("float", "int"):
+            raise SystemExit(f"space: {name} has type {spec['type']!r} (use float or int).")
+
+
+def suggest(trial: optuna.Trial, space: dict) -> dict:
+    """The hyperparameters of one trial, drawn from the search space of the configuration."""
+    params = {}
+    for name, spec in space.items():
+        if spec.get("type", "float") == "int":
+            params[name] = trial.suggest_int(name, int(spec["low"]), int(spec["high"]), log=bool(spec.get("log")))
+        else:
+            params[name] = trial.suggest_float(name, float(spec["low"]), float(spec["high"]), log=bool(spec.get("log")))
+    return params
 
 
 def model_config(hpo: dict, params: dict, seed: int) -> dict:
@@ -92,7 +124,7 @@ def run_study(sampler: str, seed: int, hpo: dict, rows, X, selection_folds, dev_
 
     def objective(trial: optuna.Trial) -> float:
         """Evaluate one trial on the selection folds and log it as a nested MLflow run."""
-        params = suggest(trial)
+        params = suggest(trial, hpo["space"])
         result = evaluate(hpo, params, seed, rows, X, selection_folds)
         trial.set_user_attr("mae_by_fold", result["mae_by_fold"])
         trial.set_user_attr("rounds", result["rounds"])
@@ -139,6 +171,47 @@ def run_default(seed: int, hpo: dict, rows, X, selection_folds, dev_fold, tracki
             mlflow.log_metrics({"best_objective": out["objective"], "D_mae": out["D_mae"], "D_rmse": out["D_rmse"], "D_skill": out["D_skill"],
                                 **{f"mae_{k}": v for k, v in selection["mae_by_fold"].items()}})
     return out
+
+
+def run_evaluations(hpo: dict, rows, X, selection_folds, dev_fold, tracking: bool) -> None:
+    """Seed-noise mode: score each named configuration with every seed (selection-fold objective, then 2024 once); no search."""
+    records = []
+    for name, params in hpo["evaluate"].items():
+        for seed in hpo["seeds"]:
+            selection = evaluate(hpo, params, seed, rows, X, selection_folds)
+            dev = evaluate(hpo, params, seed, rows, X, [dev_fold])
+            record = {"config": name, "seed": seed, "objective": selection["objective"], "D_mae": dev["D_mae"], "D_rmse": dev["D_rmse"],
+                      "D_skill": dev["D_skill"], **{f"mae_{k}": v for k, v in selection["mae_by_fold"].items()},
+                      **{f"rounds_{k}": v for k, v in {**selection["rounds"], **dev["rounds"]}.items()}}
+            records.append(record)
+            print(f"    {name:28s} seed {seed}: objective {record['objective']:.4f}  2024 MAE {record['D_mae']:.4f}  "
+                  f"rounds {selection['rounds']} / {dev['rounds']}")
+            if tracking:
+                with mlflow.start_run(run_name=f"eval_{name}_seed{seed}"):
+                    mlflow.set_tags({"kind": "eval", "config": name, "seed": str(seed)})
+                    mlflow.log_params(dict(params))
+                    mlflow.log_metrics({k: float(v) for k, v in record.items() if k not in ("config", "seed") and not k.startswith("rounds")})
+    table = pd.DataFrame(records)
+    spread = table.groupby("config")[["objective", "D_mae"]].agg(["mean", "std", "min", "max"])
+    spread[("objective", "range")] = spread[("objective", "max")] - spread[("objective", "min")]
+    spread[("D_mae", "range")] = spread[("D_mae", "max")] - spread[("D_mae", "min")]
+    print("\nSeed-to-seed spread of each configuration (std is the sample standard deviation over the seeds):")
+    print(spread.round(5).to_string())
+    if tracking:
+        with mlflow.start_run(run_name="eval_summary"):
+            mlflow.set_tags({**lineage_tags(), "kind": "summary", "evaluation_rows_sha256": rows_hash(rows[rows["split"] == "dev"])})
+            mlflow.log_params({k: str(v) for k, v in hpo.items() if k != "space"})
+            for name, group in table.groupby("config"):
+                mlflow.log_metrics({f"{name}.objective_mean": group["objective"].mean(), f"{name}.objective_std": group["objective"].std(),
+                                    f"{name}.objective_range": group["objective"].max() - group["objective"].min(),
+                                    f"{name}.D_mae_mean": group["D_mae"].mean(), f"{name}.D_mae_std": group["D_mae"].std()})
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                table.to_csv(tmp / "seed_noise.csv", index=False)
+                spread.to_csv(tmp / "seed_noise_summary.csv")
+                (tmp / "hpo_config.yaml").write_text(yaml.safe_dump(hpo, sort_keys=False), encoding="utf-8")
+                mlflow.log_artifacts(str(tmp))
+        print("Logged the summary run (eval_summary).")
 
 
 def importance_table(studies: list) -> pd.DataFrame:
@@ -189,6 +262,8 @@ def main():
         if value:
             hpo[key] = value
     tracking = not args.no_tracking
+    hpo["space"] = hpo["space"] or DEFAULT_SPACE
+    check_space(hpo["space"])
 
     rows = load_rows()
     X = build_features(rows, hpo["feature_set"], hpo["time_features"])
@@ -198,6 +273,10 @@ def main():
           f"target {hpo['target']}; objective = mean seen-station MAE over folds {[f.name for f in selection_folds]}")
     if tracking:
         setup_experiment(hpo["experiment"])
+
+    if hpo["evaluate"]:                                     # seed-noise mode: score named configurations, no search
+        run_evaluations(hpo, rows, X, selection_folds, dev_fold, tracking)
+        return
 
     studies, defaults = [], []
     t0 = time.perf_counter()
