@@ -1,0 +1,8 @@
+# E7d: Ridge regularisation sweep (hypothesis T8 in section 3.3 of docs/M3.md). Standardised inputs, feature set A, absolute target.
+# Objective = mean seen-station MAE over the three selection folds; 2024 is reported, not used to choose. alpha = 1 is the starting value.
+experiment: m3_hpo_ridge
+feature_set: A
+time_features: cyclical
+target: absolute
+start_alpha: 1.0
+alphas: [0.001, 0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1000.0, 3000.0, 10000.0]

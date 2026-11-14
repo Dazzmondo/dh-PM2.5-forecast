@@ -1,0 +1,18 @@
+# E9b: TPE search for the GRU (hypothesis T9 in section 3.3 of docs/M3.md). Objective = mean seen-station MAE over the three selection
+# folds, early stopping on an inner window, one sampler seed, 40 trials (the first 10 random). The starting configuration (32 units,
+# 1 layer, no dropout, learning rate 0.003, batch 256) is scored first in the same way. The loss is fixed at L1: in E9a it beat squared
+# error in every pair. Weight decay is not searched: the learning curves show no over-fitting.
+experiment: m3_hpo_gru
+loss: l1
+n_trials: 40
+sampler_seed: 0
+model_seed: 0
+max_epochs: 50
+patience: 7
+time_features: cyclical
+space:
+  hidden_size: [16, 32, 64, 128]
+  num_layers: [1, 2]
+  dropout: {low: 0.0, high: 0.3}
+  lr: {low: 0.0003, high: 0.01, log: true}
+  batch_size: [128, 256, 512, 1024]
