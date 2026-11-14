@@ -40,12 +40,20 @@ MIN_ROWS_FOR_LOSS_LIST = 100                      # a slice needs this many rows
 
 
 def slice_table(df: pd.DataFrame, by) -> pd.DataFrame:
-    """n, MAE, RMSE, bias, persistence MAE and skill for every group of `by` (a column name or list of names)."""
+    """n, MAE, RMSE, bias, persistence MAE, skill, share of rows and of the total absolute error, and R-squared (model and persistence).
+
+    R-squared is 1 - MSE / variance of the target within the group; it is meaningful for the overall rows and for large groups, but not
+    for a concentration band (the target's range is restricted inside a band).
+    """
     grouped = df.groupby(by, observed=True)
     table = pd.DataFrame({"n": grouped.size(), "mae": grouped["abs_error"].mean(), "rmse": np.sqrt(grouped["sq_error"].mean()),
                           "bias": grouped["error"].mean(), "persistence_mae": grouped["persistence_abs_error"].mean()})
     table["skill"] = 1 - table["mae"] / table["persistence_mae"]
     table["share_of_rows"] = table["n"] / table["n"].sum()
+    table["share_of_abs_error"] = (table["n"] * table["mae"]) / (table["n"] * table["mae"]).sum()
+    variance = grouped["target_pm25"].var(ddof=0)
+    table["r2"] = 1 - grouped["sq_error"].mean() / variance
+    table["persistence_r2"] = 1 - grouped["persistence_sq_error"].mean() / variance
     return table.reset_index()
 
 
@@ -64,6 +72,7 @@ def build_frame(rows: pd.DataFrame, forecast: np.ndarray, band_edges: list, band
     df["abs_error"] = df["error"].abs()
     df["sq_error"] = df["error"] ** 2
     df["persistence_abs_error"] = (df["pm25_current"] - df["target_pm25"]).abs()
+    df["persistence_sq_error"] = df["persistence_abs_error"] ** 2
     # the local clock hour at the start of the origin block, in 3-hour bands: blocks start every 3 h UTC and the time zones differ, so single
     # hours would mix different stations and zigzag
     df["local_hour"] = (df["local_timestamp"].dt.hour // 3) * 3
