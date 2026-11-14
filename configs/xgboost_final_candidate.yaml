@@ -1,0 +1,16 @@
+# Final candidate for XGBoost: the default hyperparameters with the absolute-error objective (E6b). Chosen over the E7/E7b tuned
+# configurations because tuning gained less than the 1% adoption threshold. Saved with --save-model for error analysis and the final evaluation.
+experiment: m3_candidates
+run_name: xgboost_absolute_error_candidate
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: none
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6
+  objective: reg:absoluteerror

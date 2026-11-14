@@ -3,7 +3,7 @@ Draw the Milestone 3 figures from the logged MLflow runs, so every plot in the r
 
 USAGE:  python src/plot_results.py [--figure learning variants hpo benchmark place | all] [--store mlruns/mlflow.db]
 INPUT:  the MLflow store (default: mlruns/mlflow.db), written by train.py, train_gru.py, tune_xgboost.py and benchmark.py
-OUTPUT: reports/figures/m3_01_learning_curves.png   m3_02_variants.png   m3_03_hpo.png   m3_04_benchmark.png   m3_05_place.png
+OUTPUT: reports/figures/m3_01_learning_curves.png   m3_02_variants.png   m3_03_hpo.png   m3_04_benchmark.png   m3_05_place.png   m3_06_models.png
         reports/m3/figures_data/<figure>.csv        the numbers each figure shows
 Nothing in the store is changed. A figure whose runs are not in the store is skipped with a message.
 
@@ -34,7 +34,8 @@ from config import REPORTS_DIR, REPO_ROOT
 
 DATA_DIR = REPORTS_DIR / "m3" / "figures_data"
 GREY = "#9a9893"
-FIGURES = ["learning", "variants", "hpo", "benchmark", "place"]
+FIGURES = ["learning", "variants", "hpo", "benchmark", "place", "models"]
+HPO_EXPERIMENTS = {"m3_hpo": ("E7", ""), "m3_hpo_absolute_error": ("E7b, absolute-error objective", "_absolute_error")}
 REFERENCE_RUNS = {"ridge": "ridge_A_standard_absolute", "xgboost": "xgboost_A_default"}     # the references of the variant comparison
 ADOPTION_THRESHOLD = 1.0                                                                    # percent, the pre-stated 1% rule
 
@@ -167,11 +168,12 @@ def fig_variants(plt, store) -> bool:
     return True
 
 
-def fig_hpo(plt, store) -> bool:
-    """Best-so-far curves, parameter importance, and the dev-year score of each study's best configuration."""
-    runs = get_runs("m3_hpo")
+def fig_hpo(plt, store, experiment: str = "m3_hpo") -> bool:
+    """Best-so-far curves, parameter importance, and the dev-year score of each study's best configuration (one figure per HPO experiment)."""
+    label, suffix = HPO_EXPERIMENTS[experiment]
+    runs = get_runs(experiment)
     if runs.empty or "tags.kind" not in runs:
-        print("hpo: no m3_hpo runs; skipped.")
+        print(f"hpo: no {experiment} runs; skipped.")
         return False
     studies = runs[runs["tags.kind"] == "study"]
     defaults = runs[runs["tags.kind"] == "default"]
@@ -210,7 +212,7 @@ def fig_hpo(plt, store) -> bool:
         axes[1].set_yticks(range(len(pivot)), pivot.index)
         axes[1].set(title="Parameter importance (Optuna)", xlabel="importance (association within the sampled trials, not causal)")
         axes[1].legend()
-        save_data("m3_03_hpo_importance", importance)
+        save_data(f"m3_03_hpo{suffix}_importance", importance)
     else:
         axes[1].text(0.5, 0.5, "no importance table yet\n(logged by the summary run)", ha="center", transform=axes[1].transAxes)
     scored = pd.concat([studies[["tags.sampler", "tags.seed", "metrics.D_mae"]].rename(columns={"tags.sampler": "sampler", "tags.seed": "seed", "metrics.D_mae": "D_mae"}),
@@ -221,11 +223,11 @@ def fig_hpo(plt, store) -> bool:
                         color={"default": GREY, "random": BLUE, "tpe": ORANGE}[sampler])
     axes[2].set_xticks(range(3), ["default", "random", "tpe"])
     axes[2].set(title="Best configuration scored once on 2024", ylabel="development MAE (ug/m3)")
-    fig.suptitle("Hyperparameter search (E7): random search vs TPE, same space, folds, metric and budget")
+    fig.suptitle(f"Hyperparameter search ({label}): random search vs TPE, same space, folds, metric and budget")
     fig.tight_layout()
-    save_figure(fig, "m3_03_hpo.png")
-    save_data("m3_03_hpo_curves", pd.concat(data, ignore_index=True))
-    save_data("m3_03_hpo_dev_scores", scored)
+    save_figure(fig, f"m3_03_hpo{suffix}.png")
+    save_data(f"m3_03_hpo{suffix}_curves", pd.concat(data, ignore_index=True))
+    save_data(f"m3_03_hpo{suffix}_dev_scores", scored)
     return True
 
 
@@ -329,6 +331,46 @@ def fig_place(plt, store) -> bool:
     return True
 
 
+def fig_models(plt, store) -> bool:
+    """The models side by side on the development year: MAE and RMSE of persistence, Ridge, XGBoost (default, final candidate) and the GRU seeds."""
+    def pick(experiment, name):
+        """The latest run of that name in the experiment, or None."""
+        runs = get_runs(experiment)
+        runs = runs[runs["tags.mlflow.runName"] == name] if len(runs) else runs
+        return runs.iloc[-1] if len(runs) else None
+
+    singles = [("persistence", "m3_baselines", "baseline_persistence", GREY), ("ridge", "m3_features", "ridge_A_standard_absolute", AQUA),
+               ("xgboost (squared error)", "m3_features", "xgboost_A_default", BLUE),
+               ("xgboost (absolute error)", "m3_candidates", "xgboost_absolute_error_candidate", BLUE)]
+    records = []
+    for label, experiment, name, color in singles:
+        run = pick(experiment, name)
+        if run is not None and pd.notna(run.get("metrics.D_mae")):
+            records.append({"model": label, "seed": "", "D_mae": run["metrics.D_mae"], "D_rmse": run["metrics.D_rmse"], "color": color})
+    neural = get_runs("m3_neural")
+    if len(neural):
+        for _, run in neural[neural["tags.mlflow.runName"].astype(str).str.match(r"gru_final_seed\d+$")].iterrows():
+            records.append({"model": "gru (L1 loss)", "seed": run["tags.seed"], "D_mae": run["metrics.D_mae"], "D_rmse": run["metrics.D_rmse"], "color": ORANGE})
+    if len(records) < 2:
+        print("models: fewer than two models with development scores; skipped.")
+        return False
+    table = pd.DataFrame(records)
+    order = list(dict.fromkeys(table["model"]))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 3.8), sharey=True)
+    for axis, column, title in ((axes[0], "D_mae", "MAE on the development year 2024"), (axes[1], "D_rmse", "RMSE on the development year 2024")):
+        for i, model in enumerate(order):
+            part = table[table["model"] == model]
+            axis.scatter(part[column], np.full(len(part), i), color=part["color"], s=55, zorder=3)
+        axis.set_yticks(range(len(order)), order)
+        axis.set(title=title, xlabel="ug/m3")
+    axes[0].invert_yaxis()
+    fig.suptitle("Models on the same 31,192 development rows (GRU: one dot per seed)")
+    fig.tight_layout()
+    save_figure(fig, "m3_06_models.png")
+    save_data("m3_06_models", table.drop(columns="color"))
+    return True
+
+
 def main():
     """Draw the requested figures from the MLflow store."""
     parser = argparse.ArgumentParser(description="Draw the Milestone 3 figures from MLflow.")
@@ -338,8 +380,14 @@ def main():
     connect(args.store)
     plt = get_pyplot()
     wanted = FIGURES if "all" in args.figure else args.figure
-    functions = {"learning": fig_learning, "variants": fig_variants, "hpo": fig_hpo, "benchmark": fig_benchmark, "place": fig_place}
-    drawn = [name for name in wanted if functions[name](plt, args.store)]
+    functions = {"learning": fig_learning, "variants": fig_variants, "benchmark": fig_benchmark, "place": fig_place, "models": fig_models}
+    drawn = []
+    for name in wanted:
+        if name == "hpo":                                   # one figure per HPO experiment that exists
+            if any([fig_hpo(plt, args.store, experiment) for experiment in HPO_EXPERIMENTS]):
+                drawn.append(name)
+        elif functions[name](plt, args.store):
+            drawn.append(name)
     print(f"\nDrawn: {drawn or 'nothing'}; skipped: {[n for n in wanted if n not in drawn]}")
 
 

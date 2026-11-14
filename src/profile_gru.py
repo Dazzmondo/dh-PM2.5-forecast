@@ -1,0 +1,270 @@
+"""
+Profile the GRU's training step (Milestone 3 bonus): which operations take the time, and what would make training cheaper?
+
+USAGE:  python src/profile_gru.py --config configs/profile_gru.yaml [--device cpu|cuda|auto] [--no-tracking]
+INPUT:  the configuration, and via m3_data.py the train and dev rows (the test split and held-out stations are never read)
+OUTPUT: reports/m3/profiling/<device>/   operator table (CSV and text), phase table, batch-size and thread sweeps, a Chrome trace
+        (open it in chrome://tracing or https://ui.perfetto.dev) and profile.png; reports/figures/m3_07_profile_<device>.png;
+        and one MLflow run in experiment `m3_profile` (the same files as artefacts)
+
+What is profiled: training steps of the final GRU (hyperparameters from the configuration), on the rows of fold D (the 2018-2023
+training rows). Each step is split into labelled phases (batch selection, forward, loss, backward, optimiser step) with
+torch.profiler.record_function, so the profiler shows both the PyTorch operators and the phase they belong to. The profile is of a
+few dozen steps after a warm-up, with operator input shapes and memory recorded. The model is trained for these steps only: nothing
+here is scored, and no dataset row after 2023 is used.
+
+Then two short sweeps that test the mitigations the profile suggests, with synchronised timings:
+  batch size   time per step and the estimated time per epoch for several batch sizes (a larger batch means fewer, larger operations)
+  threads      (CPU only) time per step for several torch thread counts
+  optimiser    time per step with Adam's default, foreach and fused implementations (those the device supports)
+
+Requires: pip install pandas pyarrow numpy torch matplotlib mlflow pyyaml
+"""
+import argparse
+import math
+import time
+from pathlib import Path
+
+import mlflow
+import numpy as np
+import pandas as pd
+import torch
+import yaml
+from torch import nn
+from torch.profiler import ProfilerActivity, profile, record_function, schedule
+
+from analysis_helpers import AQUA, BLUE, ORANGE, get_pyplot, save_figure
+from config import REPORTS_DIR
+from m3_data import expanding_folds, load_rows, time_features
+from m3_tracking import lineage_tags, setup_experiment
+from train_gru import GRUForecaster, HP_DEFAULTS, build_sequences, choose_device, sync, to_tensors
+
+DEFAULTS = {"experiment": "m3_profile", "time_features": "cyclical", "loss": "l1", "hp": {}, "warmup_steps": 5, "profiled_steps": 40,
+            "sweep_batch_sizes": [64, 256, 1024, 4096], "sweep_threads": [1, 2, 4, 8], "sweep_steps": 40, "seed": 0}
+PHASES = ["batch_selection", "forward", "loss", "backward", "optimiser_step"]
+
+
+def training_step(model, optimiser, loss_fn, seq, sta, tgt, order, start: int, batch: int, labelled: bool) -> None:
+    """One training step; with `labelled`, each phase is wrapped in record_function so that the profiler reports it by name."""
+    def phase(name):
+        """A profiler label (or nothing when the step is only being timed)."""
+        return record_function(name) if labelled else _NoLabel()
+
+    with phase("batch_selection"):
+        index = order[start:start + batch]
+        x, s, y = seq[index], sta[index], tgt[index]
+    optimiser.zero_grad()
+    with phase("forward"):
+        out = model(x, s)
+    with phase("loss"):
+        loss = loss_fn(out, y)
+    with phase("backward"):
+        loss.backward()
+    with phase("optimiser_step"):
+        optimiser.step()
+
+
+class _NoLabel:
+    """A do-nothing context manager (the timed sweeps run without profiler labels so that they add no overhead)."""
+
+    def __enter__(self):
+        """Enter the empty context."""
+        return self
+
+    def __exit__(self, *exc):
+        """Leave the empty context."""
+        return False
+
+
+def make_model(hp: dict, n_static: int, device, seed: int, adam_options: dict | None = None):
+    """A fresh GRU and its Adam optimiser (optionally with foreach or fused), seeded."""
+    torch.manual_seed(seed)
+    model = GRUForecaster(n_static, hp["hidden_size"], hp["num_layers"], hp["dropout"]).to(device)
+    return model, torch.optim.Adam(model.parameters(), lr=hp["lr"], **(adam_options or {}))
+
+
+def time_steps(hp: dict, loss_fn, tensors, device, batch: int, steps: int, seed: int, adam_options: dict | None = None) -> float:
+    """Median seconds per training step at this batch size (after 3 warm-up steps, with a device sync around each timed step)."""
+    seq, sta, tgt = tensors
+    model, optimiser = make_model({**hp, "batch_size": batch}, sta.shape[1], device, seed, adam_options)
+    n = len(tgt)
+    order = torch.randperm(n, device=device)
+    model.train()
+    times = []
+    for i in range(3 + steps):
+        start = (i * batch) % max(n - batch, 1)
+        sync(device)
+        t0 = time.perf_counter()
+        training_step(model, optimiser, loss_fn, seq, sta, tgt, order, start, batch, labelled=False)
+        sync(device)
+        if i >= 3:
+            times.append(time.perf_counter() - t0)
+    return float(np.median(times))
+
+
+def operator_table(prof, device) -> pd.DataFrame:
+    """Every operator the profiler saw, with its time (microseconds), call count and memory, most expensive first.
+
+    The phase labels (record_function) and the profiler's own step markers are kept in the table, so that the phase table can read them,
+    but are left out of the shares: they are not operators, and counting them would count the same time twice.
+    """
+    rows = []
+    for event in prof.key_averages(group_by_input_shape=False):
+        gpu_self = getattr(event, "self_device_time_total", getattr(event, "self_cuda_time_total", 0.0))
+        rows.append({"operator": event.key, "calls": event.count, "self_cpu_us": event.self_cpu_time_total, "cpu_total_us": event.cpu_time_total,
+                     "self_device_us": gpu_self if device.type == "cuda" else 0.0, "self_cpu_memory_bytes": event.self_cpu_memory_usage})
+    table = pd.DataFrame(rows)
+    sort_by = "self_device_us" if device.type == "cuda" else "self_cpu_us"
+    table["is_operator"] = ~(table["operator"].isin(PHASES) | table["operator"].str.startswith("ProfilerStep"))
+    table = table.sort_values(sort_by, ascending=False).reset_index(drop=True)
+    table["share_of_self_time"] = np.where(table["is_operator"], table[sort_by] / table.loc[table["is_operator"], sort_by].sum(), np.nan)
+    return table
+
+
+def phase_table(table: pd.DataFrame, steps: int) -> pd.DataFrame:
+    """Time per phase (from the record_function labels), per training step, with each phase's share of the labelled time."""
+    part = table[table["operator"].isin(PHASES)].set_index("operator").reindex(PHASES)
+    out = pd.DataFrame({"phase": PHASES, "ms_per_step": part["cpu_total_us"].to_numpy() / 1000 / steps})
+    out["share"] = out["ms_per_step"] / out["ms_per_step"].sum()
+    return out
+
+
+def draw(operators: pd.DataFrame, phases: pd.DataFrame, batch_sweep: pd.DataFrame, thread_sweep: pd.DataFrame, optimiser_sweep: pd.DataFrame,
+         device, hp: dict, path_name: str):
+    """One figure: top operators, phases, and the batch-size, thread and optimiser sweeps."""
+    plt = get_pyplot()
+    fig, axes = plt.subplots(1, 5, figsize=(25, 4.8))
+    top = operators[operators["is_operator"]].head(10).iloc[::-1]
+    axes[0].barh(top["operator"].str.replace("aten::", "", regex=False), 100 * top["share_of_self_time"], color=BLUE)
+    axes[0].set(title="Top 10 operators by self time", xlabel="% of self time")
+    axes[1].bar(phases["phase"].str.replace("_", "\n"), phases["ms_per_step"], color=ORANGE)
+    axes[1].set(title="Time per training step by phase", ylabel="ms per step (profiled)")
+    axes[2].plot(batch_sweep["batch_size"], batch_sweep["epoch_seconds_estimate"], marker="o", color=AQUA)
+    axes[2].set(title="Estimated epoch time by batch size", xlabel="batch size", ylabel="seconds per epoch", xscale="log")
+    if len(thread_sweep):
+        axes[3].plot(thread_sweep["threads"], thread_sweep["ms_per_step"], marker="o", color=BLUE)
+        axes[3].set(title=f"Step time by torch threads (batch {hp['batch_size']})", xlabel="threads", ylabel="ms per step")
+        axes[3].set_xticks(thread_sweep["threads"])
+        axes[3].set_ylim(bottom=0)                                  # from zero: the differences here are within the timing noise
+    else:
+        axes[3].axis("off")
+        axes[3].text(0.5, 0.5, "thread sweep is CPU only", ha="center", transform=axes[3].transAxes)
+    axes[4].bar(optimiser_sweep["optimiser"], optimiser_sweep["ms_per_step"], color=[BLUE, AQUA, ORANGE][:len(optimiser_sweep)])
+    axes[4].set(title=f"Step time by Adam implementation (batch {hp['batch_size']})", ylabel="ms per step")
+    fig.suptitle(f"GRU training profile on {path_name} (hidden size {hp['hidden_size']}, batch {hp['batch_size']}, "
+                 f"{'GPU' if device.type == 'cuda' else 'CPU'})")
+    fig.tight_layout()
+    return fig
+
+
+def main():
+    """Profile a few training steps, sweep batch size and threads, save the tables, trace and figure, and log to MLflow."""
+    parser = argparse.ArgumentParser(description="Profile the GRU training step (torch.profiler).")
+    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    parser.add_argument("--no-tracking", action="store_true")
+    args = parser.parse_args()
+    cfg = {**DEFAULTS, **yaml.safe_load(args.config.read_text(encoding="utf-8"))}
+    hp = {**HP_DEFAULTS, **cfg["hp"]}
+    device = choose_device(args.device)
+    loss_fn = nn.MSELoss() if cfg["loss"] == "mse" else nn.L1Loss()
+
+    t0 = time.perf_counter()
+    rows = load_rows()
+    sequence = build_sequences(rows)
+    static = time_features(rows, cfg["time_features"]).to_numpy(dtype=float)
+    fold = [f for f in expanding_folds(rows) if f.name == "D"][0]
+    fit = fold.fit
+    target = rows["target_pm25"].to_numpy(dtype=float)
+    stats = {"seq_mean": float(sequence[fit].mean()), "seq_std": float(sequence[fit].std()),
+             "target_mean": float(target[fit].mean()), "target_std": float(target[fit].std())}
+    sync(device)
+    t_prep = time.perf_counter()
+    tensors = to_tensors(sequence[fit], static[fit], target[fit], stats, device)       # standardise and move to the device (timed below)
+    sync(device)
+    transfer_seconds = time.perf_counter() - t_prep
+    print(f"Profiling the GRU on {device}: {len(tensors[2]):,} training rows, hidden size {hp['hidden_size']}, batch {hp['batch_size']}, "
+          f"loss {cfg['loss']}; data load {t_prep - t0:.1f}s, tensor build and transfer {transfer_seconds:.2f}s")
+
+    # 1. the profile: a labelled training loop under torch.profiler
+    seq, sta, tgt = tensors
+    model, optimiser = make_model(hp, sta.shape[1], device, cfg["seed"])
+    batch, steps, warmup = hp["batch_size"], cfg["profiled_steps"], cfg["warmup_steps"]
+    order = torch.randperm(len(tgt), device=device)
+    activities = [ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if device.type == "cuda" else [])
+    out = REPORTS_DIR / "m3" / "profiling" / device.type
+    out.mkdir(parents=True, exist_ok=True)
+    model.train()
+    with profile(activities=activities, schedule=schedule(wait=1, warmup=warmup, active=steps), record_shapes=True, profile_memory=True) as prof:
+        for i in range(1 + warmup + steps):
+            training_step(model, optimiser, loss_fn, seq, sta, tgt, order, (i * batch) % (len(tgt) - batch), batch, labelled=True)
+            sync(device)
+            prof.step()
+    prof.export_chrome_trace(str(out / "trace.json"))
+    operators = operator_table(prof, device)
+    phases = phase_table(operators, steps)
+    sort_key = "self_cuda_time_total" if device.type == "cuda" else "self_cpu_time_total"
+    text = prof.key_averages().table(sort_by=sort_key, row_limit=15)
+    (out / "operator_table.txt").write_text(text, encoding="utf-8")
+    print("\nTop operators (self time):\n" + text)
+    print("\nTime per phase (profiled steps, includes profiler overhead):\n" + phases.round(3).to_string(index=False))
+
+    # 2. the sweeps (timed without profiler labels)
+    batch_rows = []
+    for b in cfg["sweep_batch_sizes"]:
+        step_seconds = time_steps(hp, loss_fn, tensors, device, b, cfg["sweep_steps"], cfg["seed"])
+        epoch_seconds = step_seconds * math.ceil(len(tgt) / b)
+        batch_rows.append({"batch_size": b, "ms_per_step": 1000 * step_seconds, "epoch_seconds_estimate": epoch_seconds,
+                           "rows_per_second": b / step_seconds})
+        print(f"  batch {b:5d}: {1000 * step_seconds:8.2f} ms per step, about {epoch_seconds:6.1f} s per epoch")
+    batch_sweep = pd.DataFrame(batch_rows)
+    thread_rows = []
+    if device.type == "cpu":
+        original = torch.get_num_threads()
+        for t in cfg["sweep_threads"]:
+            torch.set_num_threads(t)
+            step_seconds = time_steps(hp, loss_fn, tensors, device, hp["batch_size"], cfg["sweep_steps"], cfg["seed"])
+            thread_rows.append({"threads": t, "ms_per_step": 1000 * step_seconds})
+            print(f"  {t} torch thread(s): {1000 * step_seconds:8.2f} ms per step at batch {hp['batch_size']}")
+        torch.set_num_threads(original)
+    thread_sweep = pd.DataFrame(thread_rows)
+
+    optimiser_rows = []
+    for name, options in (("default", {}), ("foreach", {"foreach": True}), ("fused", {"fused": True})):
+        try:
+            step_seconds = time_steps(hp, loss_fn, tensors, device, hp["batch_size"], cfg["sweep_steps"], cfg["seed"], options)
+        except (RuntimeError, ValueError) as error:                 # an implementation this device does not support is skipped, and said so
+            print(f"  Adam {name}: not supported here ({str(error)[:80]})")
+            continue
+        optimiser_rows.append({"optimiser": name, "ms_per_step": 1000 * step_seconds})
+        print(f"  Adam {name:8s}: {1000 * step_seconds:8.2f} ms per step at batch {hp['batch_size']}")
+    optimiser_sweep = pd.DataFrame(optimiser_rows)
+
+    operators.to_csv(out / "operators.csv", index=False)
+    phases.to_csv(out / "phases.csv", index=False)
+    batch_sweep.to_csv(out / "batch_size_sweep.csv", index=False)
+    thread_sweep.to_csv(out / "thread_sweep.csv", index=False)
+    optimiser_sweep.to_csv(out / "optimiser_sweep.csv", index=False)
+    pd.DataFrame([{"tensor_build_and_transfer_seconds": transfer_seconds, "rows": len(tgt)}]).to_csv(out / "data_transfer.csv", index=False)
+    fig = draw(operators, phases, batch_sweep, thread_sweep, optimiser_sweep, device, hp, device.type)
+    save_figure(fig, f"m3_07_profile_{device.type}.png")
+    fig.savefig(out / "profile.png", dpi=150)
+    print(f"\nFiles saved in {out}")
+    if args.no_tracking:
+        return
+
+    setup_experiment(cfg["experiment"])
+    with mlflow.start_run(run_name=f"profile_gru_{device.type}"):
+        mlflow.set_tags({**lineage_tags(), "model": "gru", "device": str(device), "kind": "profile"})
+        mlflow.log_params({f"hp.{k}": v for k, v in hp.items()} | {"loss": cfg["loss"], "profiled_steps": steps, "warmup_steps": warmup})
+        mlflow.log_metrics({f"phase_ms.{r.phase}": float(r.ms_per_step) for r in phases.itertuples() if pd.notna(r.ms_per_step)})
+        mlflow.log_metrics({f"epoch_seconds.batch_{int(r.batch_size)}": float(r.epoch_seconds_estimate) for r in batch_sweep.itertuples()})
+        mlflow.log_metrics({f"ms_per_step.threads_{int(r.threads)}": float(r.ms_per_step) for r in thread_sweep.itertuples()})
+        mlflow.log_metrics({f"ms_per_step.adam_{r.optimiser}": float(r.ms_per_step) for r in optimiser_sweep.itertuples()})
+        mlflow.log_metric("tensor_build_and_transfer_seconds", transfer_seconds)
+        mlflow.log_artifacts(str(out))
+    print("Logged the run in experiment m3_profile.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,18 @@
+# E8 place ablation, XGBoost (the final candidate: default hyperparameters, absolute-error objective): no place features (the reference for this model).
+# Leave-one-city-out (train on the other eight cities with targets up to 2022, validate the left-out city in 2023), nine folds.
+# Country is unseen (all zeros) for Athens, Belfast, Copenhagen and Madrid, so it is only testable in the five Irish folds.
+experiment: m3_place
+run_name: xgboost_place_none
+model: xgboost
+settings: [L]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: none
+place: none
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6
+  objective: reg:absoluteerror

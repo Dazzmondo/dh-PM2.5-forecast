@@ -1,0 +1,20 @@
+# E9 final: the GRU configuration chosen by the tuning grid (gru_tuning_grid.yaml) by the rule 'lowest F2023 seen-station MAE'
+# (grid run gru_grid_grid01, F2023 MAE 3.1994); three seeds, selection folds and development year.
+experiment: m3_neural
+run_name: gru_final
+settings:
+- F
+- D
+seeds:
+- 0
+- 1
+- 2
+loss: l1
+max_epochs: 50
+patience: 7
+hp:
+  hidden_size: 32
+  num_layers: 1
+  dropout: 0.0
+  lr: 0.001
+  batch_size: 256

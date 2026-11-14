@@ -1,0 +1,15 @@
+# E8 place ablation, Ridge: latitude, longitude and country added.
+# Leave-one-city-out (train on the other eight cities with targets up to 2022, validate the left-out city in 2023), nine folds.
+# Country is unseen (all zeros) for Athens, Belfast, Copenhagen and Madrid, so it is only testable in the five Irish folds.
+experiment: m3_place
+run_name: ridge_place_all
+model: ridge
+settings: [L]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: standard
+place: all
+seed: 0
+params:
+  alpha: 1.0
