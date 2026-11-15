@@ -120,6 +120,18 @@ nvidia-smi
 It must show a Tesla T4. Note the driver and CUDA versions for the report. (Google's installer replaces the older
 `install_gpu_driver.py` script, which is deprecated.)
 
+**Check that the driver is new enough for the image.** The GPU image holds PyTorch `2.15.0+cu132` (built for CUDA 13.2) and an XGBoost
+wheel built for CUDA 13.3, so the driver must support CUDA 13.x. Read the `CUDA Version` shown at the top right of the `nvidia-smi` table (it is
+the highest CUDA version the driver supports) and compare it with the versions the image reports:
+
+```
+docker run --rm --entrypoint python pm25-m3:gpu -c "import torch, xgboost; print(torch.version.cuda, xgboost.build_info()['CUDA_VERSION'])"
+```
+
+(run this after step 8, on the GPU image). If the driver's `CUDA Version` is lower than the image's CUDA version, the `cuda` tests will fail
+or report no GPU: install a newer driver (rerun `install_driver`, or follow Google's driver page for a newer branch) before any timed test.
+The T4 itself is supported: the PyTorch build includes `sm_75`.
+
 ## 6. GPU VM only: the NVIDIA Container Toolkit
 
 Install the NVIDIA Container Toolkit with the apt steps in NVIDIA's installation guide (the repository setup and package versions change
@@ -307,6 +319,7 @@ certain. Then check Billing → Reports the next day for the actual charge (filt
 | `gcloud` reports quota exceeded for `NVIDIA_T4_GPUS` or `GPUS_ALL_REGIONS` | Step 1: the limit is still 0; wait for the increase |
 | Creating a VM fails with a resource-availability or "zone does not have enough resources" error | The zone has no free capacity right now; try another zone from step 2, for both VMs |
 | `nvidia-smi` not found after step 5 | The installer was interrupted by the restart; reconnect and run `install_driver` again |
+| `nvidia-smi` works but PyTorch or XGBoost reports no CUDA device in the container | The driver's `CUDA Version` is lower than the image's CUDA 13.x (step 5, driver check); install a newer driver |
 | `docker: Error response ... could not select device driver "nvidia"` | The container toolkit is not connected to Docker; repeat the `nvidia-ctk runtime configure` step and restart Docker |
 | A run stops with "XGBoost was asked for device='cuda' but ran on 'cpu'" | XGBoost cannot see the GPU in the container; check `docker run --gpus all ... nvidia-smi` and that the image was built with the GPU `TORCH_INDEX` |
 | A hash in step 7 does not match | The files are not the dataset the experiments used; stop and check the bucket's `manifests/dataset_versions.jsonl` |
