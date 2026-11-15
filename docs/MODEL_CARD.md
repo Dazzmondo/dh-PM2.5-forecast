@@ -8,8 +8,8 @@
 > logged MLflow run, a model folder or a manifest (name the source). Everything else states only facts already verified in the
 > repository or in the Milestone 2 evidence. No slot may be left in the final file, and no number may be typed in that is not in the
 > exported run tables (`reports/m3/run_summary.csv`) or the final evaluation table (`reports/final/`).
-> The numbers in sections 1, 4, 5 and 7 describe the current candidate (XGBoost, starting hyperparameters, absolute-error objective,
-> `models/xgboost/v2`); at the freeze they are replaced by those of the tuned, frozen model.
+> The numbers in sections 1, 4, 5 and 7 describe the tuned model (XGBoost, E7c configuration, absolute-error objective,
+> `models/xgboost/v3`); if a different model is frozen they are replaced by that model's.
 
 ---
 
@@ -17,14 +17,14 @@
 
 | Field | Content |
 |---|---|
-| Model | XGBoost regressor, absolute-error objective; version 1 of the project (the primary version: PM2.5 history and time features only, no place inputs); folder `models/xgboost/v2/` (the folder number counts every saved XGBoost model; `v1` is the earlier squared-error model) and [Insert: the same path in the bucket, `models/xgboost/v2/`, once uploaded] |
-| Type | Gradient-boosted decision trees (XGBoost 3.4.1, histogram tree method). Why: it handles non-linear structure and interactions in tabular inputs without scaling, was 9.2% better than ridge regression on the development year (MAE 3.152 against 3.471), and was 1.0% better and roughly 30 times cheaper to fit than the GRU (about 5 s against 150–200 s per fit on the same laptop) (sections 2, 3.2 and 5 of `docs/M3.md`) |
+| Model | XGBoost regressor, absolute-error objective; PM2.5 history and time features only, no place inputs; folder `models/xgboost/v3/` (the folder number counts every saved XGBoost model; `v1` is the earlier squared-error model and `v2` the starting-values model) and [Insert: the same path in the bucket, `models/xgboost/v3/`, once uploaded] |
+| Type | Gradient-boosted decision trees (XGBoost 3.4.1, histogram tree method). Why: it handles non-linear structure and interactions in tabular inputs without scaling, was 9.3% better than ridge regression on the development year (MAE 3.147 against 3.471), and was 1.3% better and about three to four times cheaper to fit than the tuned GRU (114 s against 316–492 s for the 2024 fit on the same laptop) (sections 2, 3.2 and 5 of `docs/M3.md`) |
 | Task | Regression: the mean PM2.5 concentration (µg/m³) of the 3-hour block that starts six hours after the current block, for one monitoring station |
 | Forecast origin | A fixed 3-hour UTC block that has just finished; the forecast is for the block two blocks later (target = block t+2) |
 | Output | One number per station and block (a point forecast; no uncertainty interval is produced) |
 | Framework and versions | Python 3.14.2; xgboost 3.4.1; scikit-learn 1.9.1; torch 2.15.0 (GRU); pandas 3.0.6; numpy 2.5.3; pyarrow 25.0.1 (exact versions in `requirements.txt`) |
-| Code | commit `8a09bc7881610d8ad0f4bb23c23581e462b9be61`; MLflow run `70f05e2e99344d14ba5e0593010ff8c4` (experiment `m3_candidates`, configuration `configs/xgboost_final_candidate.yaml`); trained outside a container; container image [Insert: image ID or registry digest of the run that re-trained it] |
-| Trained on | 2026-11-14, on a laptop (Intel i7-8565U, 4 physical cores / 8 threads, 15.8 GB RAM, no GPU); the fits of the three selection folds and of the 2024 model took 20.6 s in total; the model file is 3.5 MB; inference takes 3.1 ms per 1,000 rows |
+| Code | commit `0fbdf710f7daaeb063f9890afc1706e700b1819f` (the working tree had uncommitted changes); MLflow run `92f101e7bb67465cbfd00d16bfaa31be` (experiment `m3_candidates`, configuration `configs/xgboost_tuned_v1.yaml`); trained outside a container; container image [Insert: image ID or registry digest of the run that re-trained it] |
+| Trained on | 2026-11-15, on a laptop (Intel i7-8565U, 4 physical cores / 8 threads, 15.8 GB RAM, no GPU); the fits of the three selection folds and of the 2024 model took 339 s in total (114 s for the 2024 fit); the model file is 22 MB; inference takes 22.9 ms per 1,000 rows |
 | Reference model | Persistence (the current block is the forecast): MAE 3.869 µg/m³, RMSE 7.99 on the development year (Milestone 2) |
 
 ## 2. Intended use
@@ -60,12 +60,15 @@
 
 ## 4. Architecture and configuration
 
-Hyperparameters of the current candidate (from `models/xgboost/v2/config.yaml`): objective `reg:absoluteerror`, 500 boosting rounds,
-learning rate 0.1, maximum depth 6, and XGBoost's defaults for the rest (minimum child weight 1, row and column sampling 1.0, L2 penalty 1,
-L1 penalty 0, gamma 0), histogram tree method, seed 0, target and inputs unscaled. These are the **starting values** of section 3.1 of
-`docs/M3.md` with the absolute-error objective chosen in E6b; they were not tuned.
-[Insert: the tuned configuration of the frozen model: the hyperparameters, the number of rounds from early stopping, and the search that
-chose it (round 2, TPE, seeds, number of trials, the MLflow run), with its gain over the starting values.]
+Hyperparameters of the tuned model (from `models/xgboost/v3/config.yaml`): objective `reg:absoluteerror`, learning rate 0.0080,
+maximum depth 6, minimum child weight 14, row subsample 0.794, column sample per tree 0.919, L2 penalty 0.013, L1 penalty 18.5,
+gamma 0.40, histogram tree method, seed 1, target and inputs unscaled, early stopping on an inner 12-month window (patience 50, cap
+4,000 rounds), which chose 3,682 rounds for the final fit on 2018–2023. They are the best configuration of one of three round-2
+searches (E7c: TPE, 3 seeds × 60 trials, absolute-error objective, `docs/M3.md` section 3.6), the one with the lowest selection-fold
+MAE (3.3393). The starting values (learning rate 0.1, 500 rounds, XGBoost defaults otherwise) scored 3.3554 on the same folds; the gain
+is 0.48% on the selection folds and 0.2% on 2024 (3.1466 against 3.1542 for the starting values with early stopping), above the seed
+noise (sd 0.001–0.002) and below the 1% adoption threshold, which applies to variants and not to the search. The F2023 fold stopped at
+3,996 of 4,000 rounds, so the cap was nearly binding there.
 
 ## 5. Training and evaluation procedure
 
@@ -76,7 +79,7 @@ chose it (round 2, TPE, seeds, number of trials, the MLflow run), with its gain 
 - **Development year.** Fit on 2018–2023, score on 2024 (31,192 rows; all 12 stations seen).
 - **Final evaluation, once.** The frozen model was scored once on the 2025 test split (stations seen in training) and on the held-out
   cities (never seen). No refit on 2024, so the model has not seen 2024.
-- **Seeds and hardware.** Seed 0 for the XGBoost candidate (with row and column sampling off the model does not depend on the seed); seeds 0, 1 and 2 for the GRU comparison and the hyperparameter searches. Laptop (section 1); the benchmark and profile on a cloud VM are [Insert].
+- **Seeds and hardware.** Seed 1 for the tuned XGBoost model (it samples rows and columns, so the seed changes the trees; the seed alone moves the selection-fold MAE by about 0.001–0.002); seeds 0, 1 and 2 for the GRU comparison and the hyperparameter searches. Laptop (section 1); the benchmark and profile on a cloud VM are [Insert].
 - **Reproducibility.** Section 7 of `docs/M3.md`: pinned versions, container image, configuration file, dataset and run IDs, and the
   clean re-run result [Insert].
 
@@ -92,29 +95,29 @@ All numbers come from logged runs (`reports/m3/run_summary.csv`, `reports/final/
 
 | Set | Rows | MAE | RMSE | Persistence MAE | Skill | Stations beating persistence |
 |---|---|---|---|---|---|---|
-| Selection folds (mean of 3, seen-station rows) | 14,825 / 15,260 / 31,377 | 3.361 | 6.054 | 4.131 | 0.186 | n/a |
-| Development year 2024 | 31,192 | 3.152 | 6.263 | 3.869 | 0.185 | 12 / 12 |
+| Selection folds (mean of 3, seen-station rows) | 14,825 / 15,260 / 31,377 | 3.339 | 6.070 | 4.131 | 0.192 | n/a |
+| Development year 2024 | 31,192 | 3.147 | 6.263 | 3.869 | 0.187 | 12 / 12 |
 | 2025 test split | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] |
 | Held-out cities (never seen) | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] |
 
-Development year, per station (`reports/m3/error_analysis/xgboost_v2_dev/by_station.csv`):
+Development year, per station (`reports/m3/error_analysis/xgboost_v3_dev/by_station.csv`):
 
 | Station | City | Rows | MAE | RMSE | Bias | Persistence MAE | Skill |
 |---|---|---|---|---|---|---|---|
-| DK0034A | Copenhagen | 2,457 | 2.958 | 4.481 | −0.492 | 3.255 | 0.091 |
-| ES0118A | Madrid | 2,564 | 3.513 | 4.953 | −0.551 | 4.268 | 0.177 |
-| ES1525A | Madrid | 2,685 | 3.036 | 4.596 | −0.286 | 3.492 | 0.131 |
-| GB0567A | Belfast | 2,917 | 2.542 | 4.058 | −0.204 | 2.873 | 0.115 |
-| GR0003A | Athens | 2,651 | 4.896 | 9.433 | −1.332 | 6.647 | 0.263 |
-| GR0039A | Athens | 2,830 | 2.639 | 5.607 | +0.022 | 3.023 | 0.127 |
-| IE0028A | Dublin | 2,158 | 3.095 | 5.733 | −0.611 | 4.023 | 0.231 |
-| IE004BP | Cork | 2,652 | 2.707 | 4.498 | −0.074 | 3.393 | 0.202 |
-| IE005AP | Dublin | 2,725 | 2.988 | 5.001 | −0.422 | 3.378 | 0.116 |
-| IE005CP | Waterford | 2,686 | 3.207 | 7.522 | −0.688 | 3.977 | 0.194 |
-| IE007CP | Limerick | 2,534 | 3.524 | 10.563 | −0.896 | 4.878 | 0.278 |
-| IE009GY | Galway | 2,333 | 2.775 | 4.823 | −0.248 | 3.374 | 0.178 |
+| DK0034A | Copenhagen | 2,457 | 2.948 | 4.474 | −0.484 | 3.255 | 0.094 |
+| ES0118A | Madrid | 2,564 | 3.525 | 4.974 | −0.591 | 4.268 | 0.174 |
+| ES1525A | Madrid | 2,685 | 3.040 | 4.602 | −0.299 | 3.492 | 0.130 |
+| GB0567A | Belfast | 2,917 | 2.544 | 4.039 | −0.184 | 2.873 | 0.114 |
+| GR0003A | Athens | 2,651 | 4.892 | 9.503 | −1.423 | 6.647 | 0.264 |
+| GR0039A | Athens | 2,830 | 2.627 | 5.590 | −0.058 | 3.023 | 0.131 |
+| IE0028A | Dublin | 2,158 | 3.091 | 5.727 | −0.615 | 4.023 | 0.232 |
+| IE004BP | Cork | 2,652 | 2.692 | 4.514 | −0.100 | 3.393 | 0.207 |
+| IE005AP | Dublin | 2,725 | 2.974 | 4.968 | −0.404 | 3.378 | 0.120 |
+| IE005CP | Waterford | 2,686 | 3.196 | 7.524 | −0.694 | 3.977 | 0.196 |
+| IE007CP | Limerick | 2,534 | 3.532 | 10.522 | −0.902 | 4.878 | 0.276 |
+| IE009GY | Galway | 2,333 | 2.759 | 4.805 | −0.267 | 3.374 | 0.182 |
 
-Without Cork UCC (28,540 rows): MAE 3.193, persistence 3.913, skill 0.184.
+Without Cork UCC (28,540 rows): MAE 3.189, persistence 3.913, skill 0.185.
 [Insert: the same two tables for the 2025 test split and the held-out result per city (Derry, London, Paris) with its row count, with and without Cork UCC. State Copenhagen (no valid 2025 hours) and Kilmainham (225 valid 2025 rows) in the row counts.]
 
 ## 8. Limitations and weaknesses
@@ -122,12 +125,12 @@ Without Cork UCC (28,540 rows): MAE 3.193, persistence 3.913, skill 0.184.
 Each statement below is tied to evidence in `docs/M3.md` (section 9, error analysis); the causes are hypotheses, not findings.
 
 - **Peaks.** High concentrations are systematically under-predicted. For targets above 25 µg/m³ (3.6% of the development rows) the mean
-  signed error is −15.5 µg/m³ and the skill against persistence is only 0.06; those rows give 18.6% of the absolute error. Between 19.3
+  signed error is −15.8 µg/m³ and the skill against persistence is only 0.05; those rows give 18.8% of the absolute error. Tuning did not change this (−15.5 before tuning). Between 19.3
   and 25 the bias is −5.6; at or below 5 µg/m³ the model over-predicts by 1.9.
 - **Where the model loses to persistence.** On the development year no station, band, hour, month or weekday with at least 100 rows
   loses to persistence for this model. The squared-error version of the model does lose in the lowest band (at or below 5 µg/m³: skill
   −0.04), which is one reason for the absolute-error objective; the cost is poorer peaks (above 25 µg/m³: MAE 16.2 against 14.9).
-- **Isolated spikes.** The worst 1% of errors (312 rows, an absolute error above 19.6 µg/m³) are 89% under-predictions of surges that
+- **Isolated spikes.** The worst 1% of errors (312 rows, an absolute error above 19.6 µg/m³) are 91% under-predictions of surges that
   start from a low current value (mean target 48.3 against 9.1 for all rows); persistence is wrong by about as much in most of them, so
   no method that uses only the station's history catches them. Athens Aristotelous supplies 25% of them with 8.5% of the rows;
   Limerick and Waterford have an RMSE two to three times their MAE.
@@ -184,18 +187,19 @@ and the block table `f3d9209ded925b93c10c60ae9ea740cd031e3ea56c868abd465e607d8e9
 
 ```bash
 export DATASET_RUN_ID=20261019T213934Z
-python src/train.py --config configs/xgboost_final_candidate.yaml --save-model
+python src/train.py --config configs/xgboost_tuned_v1.yaml --save-model
 ```
 
-Expected: selection-fold MAE 3.3612 and development-year MAE 3.1516 (persistence 3.8688, recomputed and checked by the script), saved as
+Expected: selection-fold MAE 3.3393 and development-year MAE 3.1466 (persistence 3.8688, recomputed and checked by the script), saved as
 the next `models/xgboost/v<N>/`. In the container: `docker build -t pm25-m3:cpu --build-arg GIT_COMMIT=$(git rev-parse HEAD) .`, then
-`docker run --rm -v "$PWD/processed_data:/app/processed_data:ro" -v "$PWD/mlruns:/app/mlruns" -v "$PWD/reports:/app/reports" pm25-m3:cpu src/train.py --config configs/xgboost_final_candidate.yaml`
-(a CPU container reproduced the host metrics of the starting XGBoost configuration exactly).
-[Insert: the same commands for the tuned frozen model (its configuration file and expected metric), and the result of the clean-run check.]
+`docker run --rm -v "$PWD/processed_data:/app/processed_data:ro" -v "$PWD/mlruns:/app/mlruns" -v "$PWD/reports:/app/reports" pm25-m3:cpu src/train.py --config configs/xgboost_tuned_v1.yaml`
+(a CPU container reproduced the host metrics of the starting XGBoost configuration exactly. For the tuned configuration, which samples rows and columns, the CPU container on the Windows laptop (Linux under WSL2, 8 threads, the same XGBoost 3.4.1) gave selection-fold MAE 3.3409 and development-year MAE 3.1452 against 3.3393 and 3.1466 on the host: not identical, but within the seed-to-seed spread of 0.001–0.004 measured for such configurations, and the early-stopping rounds differ (2,540, 2,243, 4,000 and 3,996 against 2,241, 2,852, 3,996 and 3,682). A reproduction is therefore accepted when the selection-fold MAE is within 0.005 and the 2024 MAE within 0.003 of the host values).
+[Insert: the result of the clean-run check.]
 
 ## 12. Version history
 
 | Version | Date | Change | Dataset run ID | Development MAE |
 |---|---|---|---|---|
-| 1 (candidate) | 2026-11-14 | XGBoost, starting hyperparameters, absolute-error objective, no place inputs (`models/xgboost/v2`) | 20261019T213934Z | 3.152 |
-| [Insert: 1 (frozen)] | [Insert] | [Insert: the tuned model chosen at the freeze] | 20261019T213934Z | [Insert] |
+| 1 (starting values) | 2026-11-14 | XGBoost, starting hyperparameters, absolute-error objective, no place inputs (`models/xgboost/v2`) | 20261019T213934Z | 3.152 |
+| 2 (tuned) | 2026-11-15 | The same model with the E7c configuration, early stopping on an inner window (`models/xgboost/v3`) | 20261019T213934Z | 3.147 |
+| [Insert: frozen version, if different] | [Insert] | [Insert] | 20261019T213934Z | [Insert] |

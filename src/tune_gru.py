@@ -4,7 +4,7 @@ Hyperparameter search for the GRU (Milestone 3, E9b): TPE over the architecture,
 USAGE:  python src/tune_gru.py --config configs/hpo_gru.yaml [--n-trials N] [--device auto|cpu|cuda] [--no-tracking]
 INPUT:  the configuration, and via m3_data.py the train and dev rows (the test split and held-out stations are never read)
 OUTPUT: MLflow runs in experiment `m3_hpo_gru` (one run for the search with one nested run per trial, a run for the starting
-        configuration, a summary run with the figure, the trials table and the parameter importance);
+        configuration, a summary run with the figure, the trials table and the hyperparameter importance);
         reports/figures/m3_09_gru_search.png; reports/m3/gru_search/; and configs/gru_tuned_final.yaml, the configuration of the
         best trial, ready for a final run with three seeds (python src/train_gru.py --config configs/gru_tuned_final.yaml --save-model)
 

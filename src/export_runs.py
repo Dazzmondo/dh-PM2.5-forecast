@@ -21,7 +21,7 @@ import pandas as pd
 from config import REPORTS_DIR
 from m3_tracking import TRACKING_URI
 
-KEEP_TAGS = ["kind", "model", "sampler", "seed", "device", "git_commit", "dataset_run_id", "image_digest", "python",
+KEEP_TAGS = ["kind", "model", "sampler", "seed", "device", "environment", "machine_type", "git_commit", "dataset_run_id", "image_digest", "python",
              "machine_cpu", "machine_gpu", "evaluation_rows_sha256", "features_file_sha256", "model_dir"]
 KEY_COLUMNS = ["experiment", "run_name", "F_mean_mae_seen", "D_mae", "D_rmse", "D_skill", "time_fit_seconds", "inference_ms_per_1000_rows",
                "model_size_bytes", "peak_ram_mb"]

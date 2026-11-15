@@ -6,6 +6,10 @@ USAGE:  python src/benchmark.py --config configs/compute_benchmark.yaml [--only 
 INPUT:  the configuration, and via m3_data.py the train and dev rows (the test split and held-out stations are never read)
 OUTPUT: one MLflow run in experiment `m3_benchmark` (every repeat as a metric step, the summary tables as artefacts, the machine and
         image as tags) and the summary tables printed. Run it on each machine being compared, from the same image.
+        The same tables are also written as plain files to reports/m3/<experiment>/<environment>/ (benchmark_repeats.csv,
+        benchmark_summary.csv, machine.json), written even with --no-tracking. <environment> is the environment variable
+        RUN_ENVIRONMENT (laptop, gcp-cpu-vm or gcp-gpu-vm), or --machine-type when it is not set. The plain files are what is copied back
+        from a VM, because a VM's MLflow database cannot be opened on another machine; plot_results.py draws the comparison from them.
 
 Three tests (each: a warm-up run that is discarded, then `repeats` timed runs; every run fits the model on the whole training split,
 2018-2023, and predicts the 31,192 development rows; no early stopping, so every run is exactly as long as the others):
@@ -27,6 +31,7 @@ Requires: pip install pandas pyarrow numpy scikit-learn xgboost torch mlflow pyy
 """
 import argparse
 import json
+import os
 import pickle
 import subprocess
 import tempfile
@@ -40,6 +45,7 @@ import torch
 import yaml
 from xgboost import XGBRegressor
 
+from config import REPORTS_DIR
 from m3_data import build_features, expanding_folds, load_rows, rows_hash, time_features
 from m3_tracking import lineage_tags, peak_ram_mb, pip_freeze_text, setup_experiment
 from train_gru import build_sequences, predict, sync, to_tensors, train_network
@@ -229,6 +235,16 @@ def main():
     for line in skipped:
         print("SKIPPED:", line)
     print(f"Benchmark wall time {total_seconds / 60:.1f} min" + (f", approximate cost {args.hourly_rate * total_seconds / 3600:.3f}" if args.hourly_rate else ""))
+    environment = os.environ.get("RUN_ENVIRONMENT") or args.machine_type
+    out = REPORTS_DIR / "m3" / cfg["experiment"] / environment           # plain files, so the results survive being copied off a VM
+    out.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(records).to_csv(out / "benchmark_repeats.csv", index=False)
+    table.to_csv(out / "benchmark_summary.csv", index=False)
+    machine = {**lineage_tags(), "environment": environment, "machine_type": args.machine_type, "region": args.region,
+               "physical_cores": args.physical_cores, "hourly_rate": args.hourly_rate, "cpu_only_rate": args.cpu_only_rate,
+               "tests": tests, "skipped": skipped, "benchmark_wall_seconds": total_seconds}
+    (out / "machine.json").write_text(json.dumps(machine, indent=2, default=str), encoding="utf-8")
+    print(f"Wrote the tables and machine description to {out}")
     if args.no_tracking:
         return
 

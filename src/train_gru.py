@@ -283,8 +283,12 @@ def main():
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--save-model", action="store_true")
     parser.add_argument("--no-tracking", action="store_true")
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], help="overrides `device` in the configuration (the default there is "
+                        "auto, which silently uses a GPU when there is one); cuda stops the run if no CUDA GPU is available")
     args = parser.parse_args()
     cfg = {**CFG_DEFAULTS, **yaml.safe_load(args.config.read_text(encoding="utf-8"))}
+    if args.device:
+        cfg["device"] = args.device
     for key in ("experiment", "run_name"):
         if key not in cfg:
             raise SystemExit(f"The configuration needs a `{key}` entry.")

@@ -1,0 +1,24 @@
+# Tuned XGBoost for model version 1 (PM2.5 history and time features only): the best configuration of the E7c study with the lowest
+# selection-fold objective (TPE, seed 1; docs/M3.md section 3.6), refitted with early stopping on the inner window exactly as in the
+# search, so the objective (3.3393) and the 2024 MAE (3.1466) of that study should be reproduced. Saved with --save-model.
+experiment: m3_candidates
+run_name: xgboost_tuned_v1
+model: xgboost
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: none
+seed: 1
+params:
+  n_estimators: 4000
+  early_stopping_rounds: 50
+  objective: reg:absoluteerror
+  learning_rate: 0.007987335716764061
+  max_depth: 6
+  min_child_weight: 14
+  subsample: 0.7938788343363571
+  colsample_bytree: 0.9194363936480524
+  reg_lambda: 0.012898416267104518
+  reg_alpha: 18.525547852187653
+  gamma: 0.39996564220441927

@@ -1,13 +1,13 @@
 # Bonus: profile the training step of the final GRU (torch.profiler) and test batch size and thread count as mitigations.
-# Hyperparameters are those of gru_final.yaml (chosen by the tuning grid). Nothing is scored; no row after 2023 is used.
+# Hyperparameters are those of gru_tuned_final.yaml (the tuned GRU, docs/M3.md section 3.7). Nothing is scored; no row after 2023 is used.
 experiment: m3_profile
 time_features: cyclical
 loss: l1
 hp:
   hidden_size: 32
-  num_layers: 1
-  dropout: 0.0
-  lr: 0.001
+  num_layers: 2
+  dropout: 0.08413115880940632
+  lr: 0.0007866576993050762
   batch_size: 256
 warmup_steps: 5
 profiled_steps: 40

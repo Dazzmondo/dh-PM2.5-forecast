@@ -144,6 +144,16 @@ def build_estimator(cfg: dict, n_estimators=None, early_stopping=None):
     return XGBRegressor(random_state=cfg["seed"], n_jobs=cfg["threads"], **params)
 
 
+def check_xgboost_device(cfg: dict, model) -> None:
+    """Stop if XGBoost was asked for a device (`device` in params) but ran on another one: with device='cuda' and no usable GPU it
+    falls back to the CPU with only a warning, so a CPU run could be recorded as a GPU run."""
+    requested = cfg["params"].get("device") if cfg["model"] == "xgboost" else None
+    if requested:
+        used = json.loads(model.get_booster().save_config())["learner"]["generic_param"]["device"]
+        if not used.startswith(requested):
+            raise SystemExit(f"STOPPED: XGBoost was asked for device={requested!r} but ran on {used!r}.")
+
+
 def fit_predict(cfg: dict, rows: pd.DataFrame, X: pd.DataFrame, fold):
     """Fit on the fold's training rows and forecast its validation rows. Returns (forecast in ug/m3, info dict, fitted model)."""
     val = rows[fold.val]
@@ -170,6 +180,7 @@ def fit_predict(cfg: dict, rows: pd.DataFrame, X: pd.DataFrame, fold):
                                       "train_mae": curve["validation_0"]["mae"], "inner_validation_mae": curve["validation_1"]["mae"]})
     model = build_estimator(cfg, n_estimators=rounds)
     model.fit(X[fold.fit], y[fold.fit])
+    check_xgboost_device(cfg, model)
     info["fit_seconds"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     raw = model.predict(X[fold.val])

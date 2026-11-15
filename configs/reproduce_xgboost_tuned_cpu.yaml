@@ -1,0 +1,25 @@
+# Reproduction check on a machine (laptop container, CPU VM, GPU VM): the tuned XGBoost configuration of configs/xgboost_tuned_v1.yaml,
+# unchanged, logged in its own experiment so that the candidate runs are not duplicated. Not a new result.
+# Accepted when the selection-fold MAE is within 0.005 and the 2024 MAE within 0.003 of the host values 3.3393 and 3.1466
+# (docs/MODEL_CARD.md section 11). Run with the environment variable RUN_ENVIRONMENT set.
+run_name: reproduce_xgboost_tuned_cpu
+model: xgboost
+experiment: m3_reproduction
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: none
+settings: [F, D]
+seed: 1
+params:
+  n_estimators: 4000
+  early_stopping_rounds: 50
+  objective: reg:absoluteerror
+  learning_rate: 0.007987335716764061
+  max_depth: 6
+  min_child_weight: 14
+  subsample: 0.7938788343363571
+  colsample_bytree: 0.9194363936480524
+  reg_lambda: 0.012898416267104518
+  reg_alpha: 18.525547852187653
+  gamma: 0.39996564220441927

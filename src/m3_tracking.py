@@ -6,7 +6,8 @@ OUTPUT: an MLflow store in <repo>/mlruns/ (a SQLite file mlflow.db plus an artif
 
 What is recorded for every run (so another student can compare runs and see exactly what produced a number):
   lineage tags   git commit (+ "-dirty"), SHA-256 of the features and block files, dataset run ID and Docker image digest
-                 (from the environment variables DATASET_RUN_ID and IMAGE_DIGEST when set), Python and library versions,
+                 (from the environment variables DATASET_RUN_ID and IMAGE_DIGEST when set), the environment label
+                 (RUN_ENVIRONMENT: laptop, gcp-cpu-vm or gcp-gpu-vm), Python and library versions,
                  CPU model, physical cores / threads, RAM, GPU (if any), machine name
   parameters     the full configuration
   artefacts      the configuration (YAML), `pip freeze`
@@ -121,6 +122,7 @@ def lineage_tags() -> dict:
             "block_table_sha256": sha256_of_file(BLOCKS_PATH),
             "dataset_run_id": os.environ.get("DATASET_RUN_ID", "not set"),
             "image_digest": os.environ.get("IMAGE_DIGEST", "not in a container"),
+            "environment": os.environ.get("RUN_ENVIRONMENT", "not set"),          # which machine setup: laptop, gcp-cpu-vm, gcp-gpu-vm
             "python": platform.python_version()}
     tags.update({f"lib_{name}": version for name, version in versions.items()})
     tags.update({f"machine_{key}": str(value) for key, value in machine_description().items()})

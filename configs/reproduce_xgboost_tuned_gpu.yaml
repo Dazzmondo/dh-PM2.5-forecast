@@ -1,0 +1,25 @@
+# As reproduce_xgboost_tuned_cpu.yaml, with the trees built on the GPU (`device: cuda`). train.py stops if XGBoost did not really use the GPU.
+# A GPU build differs numerically from a CPU build, so the 2024 and selection-fold MAEs are compared with the same tolerance (0.003 and
+# 0.005) and any difference is reported; the CPU model stays the frozen model whatever this gives.
+run_name: reproduce_xgboost_tuned_gpu
+model: xgboost
+experiment: m3_reproduction
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: none
+settings: [F, D]
+seed: 1
+params:
+  n_estimators: 4000
+  early_stopping_rounds: 50
+  objective: reg:absoluteerror
+  learning_rate: 0.007987335716764061
+  max_depth: 6
+  min_child_weight: 14
+  subsample: 0.7938788343363571
+  colsample_bytree: 0.9194363936480524
+  reg_lambda: 0.012898416267104518
+  reg_alpha: 18.525547852187653
+  gamma: 0.39996564220441927
+  device: cuda

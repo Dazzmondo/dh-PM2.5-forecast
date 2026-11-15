@@ -1,0 +1,19 @@
+# E9b final: the best configuration of the GRU search (tune_gru.py, trial 38, objective 3.3650 against 3.3794 for the starting configuration); three seeds, selection folds and 2024.
+experiment: m3_neural
+run_name: gru_tuned_final
+settings:
+- F
+- D
+seeds:
+- 0
+- 1
+- 2
+loss: l1
+max_epochs: 50
+patience: 7
+hp:
+  hidden_size: 32
+  num_layers: 2
+  dropout: 0.08413115880940632
+  lr: 0.0007866576993050762
+  batch_size: 256

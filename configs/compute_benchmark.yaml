@@ -1,6 +1,11 @@
 # E11: compute benchmark. XGBoost CPU thread scaling (1, 2, 4, 8 threads), XGBoost CPU vs GPU, and the GRU on CPU vs GPU.
 # Every run fits the whole training split with no early stopping (so run lengths match) and predicts the 31,192 development rows.
-# Run it on each machine being compared, from the same image:  python src/benchmark.py --config configs/compute_benchmark.yaml --machine-type <type>
+# Run it on each machine being compared, from the same image, with RUN_ENVIRONMENT set to laptop, gcp-cpu-vm or gcp-gpu-vm:
+#   python src/benchmark.py --config configs/compute_benchmark.yaml --machine-type <type>
+# xgb_configs.default  the starting values (a small, cheap reference workload)
+# xgb_configs.tuned    the tuned configuration of the model (docs/M3.md section 3.6); the number of rounds is the one early stopping chose
+#                      for the final fit (3,682) because this benchmark does not use early stopping
+# gru                  the tuned GRU (docs/M3.md section 3.7), L1 loss, trained for a fixed number of epochs
 experiment: m3_benchmark
 feature_set: A
 time_features: cyclical
@@ -9,12 +14,23 @@ seed: 0
 threads: [1, 2, 4, 8]
 xgb_configs:
   default: {n_estimators: 500, learning_rate: 0.1, max_depth: 6}
-  large: {n_estimators: 2000, learning_rate: 0.05, max_depth: 10}
+  tuned:
+    n_estimators: 3682
+    learning_rate: 0.007987335716764061
+    max_depth: 6
+    min_child_weight: 14
+    subsample: 0.7938788343363571
+    colsample_bytree: 0.9194363936480524
+    reg_lambda: 0.012898416267104518
+    reg_alpha: 18.525547852187653
+    gamma: 0.39996564220441927
+    objective: reg:absoluteerror
+loss: l1
 gru:
   hidden_size: 32
-  num_layers: 1
-  dropout: 0.0
-  lr: 0.003
+  num_layers: 2
+  dropout: 0.08413115880940632
+  lr: 0.0007866576993050762
   batch_size: 256
 gru_epochs: 10
 gru_repeats: 3

@@ -1,0 +1,15 @@
+# E4d: does a longer summary window (16 or 24 blocks instead of 8) help XGBoost? (docs/M3.md section 2.3)
+# The model is the starting configuration with the absolute-error objective, as in the E3-E6 variant comparisons; only the window of the
+# rolling mean and standard deviation changes. Every variant uses the same rows (those with a complete window of the longest length).
+experiment: m3_windows
+time_features: cyclical
+target: absolute
+windows: [8, 16, 24]          # the first is the reference and must equal the stored 8-block window
+add_longest: true             # also score "reference window + longest window" (the longest window's mean/std added as extra columns)
+adoption_threshold_pct: 1.0   # the pre-stated rule: >= 1% better in >= 2 of 3 selection folds, and 2024 not worse
+seed: 0
+params:
+  n_estimators: 500
+  learning_rate: 0.1
+  max_depth: 6
+  objective: reg:absoluteerror

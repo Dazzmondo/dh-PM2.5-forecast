@@ -4,7 +4,7 @@ Hyperparameter search for XGBoost: random search against TPE (Bayesian optimisat
 USAGE:  python src/tune_xgboost.py --config configs/hpo_random_vs_tpe.yaml [--n-trials N] [--seeds 0 1] [--samplers random tpe] [--no-tracking]
 INPUT:  the configuration, and via m3_data.py the train and dev rows (the test split and held-out stations are never read)
 OUTPUT: MLflow runs in mlruns/ (experiment `m3_hpo`): one run per (sampler, seed) study with one nested run per trial, a run for the
-        default configuration of each seed, and a summary run holding the best-so-far curves, the parameter importance and the tables.
+        default configuration of each seed, and a summary run holding the best-so-far curves, the hyperparameter importance and the tables.
 
 The protocol (fixed before any result was seen):
   - Objective (minimised): the equal-weight mean, over the three selection folds (validation years 2021, 2022, 2023), of the MAE on
@@ -30,7 +30,7 @@ early_stopping_rounds and n_estimators (the cap on boosting rounds):
              must be an XGBoost hyperparameter; the whole space is logged with the run
   evaluate:  {name: {parameter: value, ...}, ...}   NO search: each named configuration is scored with every seed in `seeds` (the
              objective on the selection folds, then 2024 once) to measure how much the score moves with the seed alone
-Parameter importance (Optuna) describes how the sampled trials varied with each parameter; it is not a causal effect.
+Hyperhyperparameter importance (Optuna) describes how the sampled trials varied with each hyperparameter; it is not a causal effect.
 
 Requires: pip install pandas pyarrow numpy scikit-learn xgboost optuna mlflow pyyaml matplotlib
 """
@@ -215,7 +215,7 @@ def run_evaluations(hpo: dict, rows, X, selection_folds, dev_fold, tracking: boo
 
 
 def importance_table(studies: list) -> pd.DataFrame:
-    """Optuna parameter importance per study (needs a few trials); NaN-free rows only. Association within the sampled trials, not causal."""
+    """Optuna hyperparameter importance per study (needs a few trials); NaN-free rows only. Association within the sampled trials, not causal."""
     rows = []
     for study_result in studies:
         try:
@@ -319,7 +319,7 @@ def main():
             (tmp / "pip_freeze.txt").write_text(pip_freeze_text(), encoding="utf-8")
             (tmp / "hpo_config.yaml").write_text(yaml.safe_dump(hpo, sort_keys=False), encoding="utf-8")
             mlflow.log_artifacts(str(tmp))
-    print("Logged the summary run (hpo_summary) with the figure, results table and parameter importance.")
+    print("Logged the summary run (hpo_summary) with the figure, results table and hyperparameter importance.")
 
 
 if __name__ == "__main__":

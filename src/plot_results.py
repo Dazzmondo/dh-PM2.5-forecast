@@ -12,7 +12,7 @@ Nothing in the store is changed. A figure whose runs are not in the store is ski
   variants   (E1-E6b) every run of the baselines and reference models: seen-station fold MAE and development MAE, with the change from
              that model's reference configuration in percent and the 1% adoption threshold marked.
   hpo        (E7) best-so-far objective by trial for random search against TPE (mean and range over the seeds) with the default
-             configuration, the parameter importance, and each study's best configuration scored once on the development year.
+             configuration, the hyperparameter importance, and each study's best configuration scored once on the development year.
   benchmark  (E11) XGBoost speed-up and efficiency against threads (ideal line and Amdahl fit), and fit times on CPU vs GPU for XGBoost and
              the GRU, per machine.
   place      (E8) leave-one-city-out MAE per city for each place-feature variant, with persistence, from the runs of setting L.
@@ -35,7 +35,8 @@ from config import REPORTS_DIR, REPO_ROOT
 DATA_DIR = REPORTS_DIR / "m3" / "figures_data"
 GREY = "#9a9893"
 FIGURES = ["learning", "variants", "hpo", "benchmark", "place", "models"]
-HPO_EXPERIMENTS = {"m3_hpo": ("E7", ""), "m3_hpo_absolute_error": ("E7b, absolute-error objective", "_absolute_error")}
+HPO_EXPERIMENTS = {"m3_hpo": ("E7", ""), "m3_hpo_absolute_error": ("E7b, absolute-error objective", "_absolute_error"),
+                   "m3_hpo_round2": ("E7c, round 2, absolute-error objective", "_round2")}
 REFERENCE_RUNS = {"ridge": "ridge_A_standard_absolute", "xgboost": "xgboost_A_default"}     # the references of the variant comparison
 ADOPTION_THRESHOLD = 1.0                                                                    # percent, the pre-stated 1% rule
 
@@ -169,7 +170,7 @@ def fig_variants(plt, store) -> bool:
 
 
 def fig_hpo(plt, store, experiment: str = "m3_hpo") -> bool:
-    """Best-so-far curves, parameter importance, and the dev-year score of each study's best configuration (one figure per HPO experiment)."""
+    """Best-so-far curves, hyperparameter importance, and the dev-year score of each study's best configuration (one figure per HPO experiment)."""
     label, suffix = HPO_EXPERIMENTS[experiment]
     runs = get_runs(experiment)
     if runs.empty or "tags.kind" not in runs:
@@ -210,7 +211,7 @@ def fig_hpo(plt, store, experiment: str = "m3_hpo") -> bool:
         for k, sampler in enumerate(pivot.columns):
             axes[1].barh(np.arange(len(pivot)) + (k - 0.5) * height, pivot[sampler], height=height, color=colors.get(sampler), label=sampler)
         axes[1].set_yticks(range(len(pivot)), pivot.index)
-        axes[1].set(title="Parameter importance (Optuna)", xlabel="importance (association within the sampled trials, not causal)")
+        axes[1].set(title="Hyperhyperparameter importance (Optuna)", xlabel="importance (association within the sampled trials, not causal)")
         axes[1].legend()
         save_data(f"m3_03_hpo{suffix}_importance", importance)
     else:
@@ -223,7 +224,8 @@ def fig_hpo(plt, store, experiment: str = "m3_hpo") -> bool:
                         color={"default": GREY, "random": BLUE, "tpe": ORANGE}[sampler])
     axes[2].set_xticks(range(3), ["default", "random", "tpe"])
     axes[2].set(title="Best configuration scored once on 2024", ylabel="development MAE (ug/m3)")
-    fig.suptitle(f"Hyperparameter search ({label}): random search vs TPE, same space, folds, metric and budget")
+    samplers = "random search vs TPE" if "random" in curves else "TPE"
+    fig.suptitle(f"Hyperparameter search ({label}): {samplers}, same space, folds, metric and budget")
     fig.tight_layout()
     save_figure(fig, f"m3_03_hpo{suffix}.png")
     save_data(f"m3_03_hpo{suffix}_curves", pd.concat(data, ignore_index=True))
@@ -236,19 +238,31 @@ def amdahl_curve(threads: np.ndarray, p: float) -> np.ndarray:
     return 1 / ((1 - p) + p / threads)
 
 
-def fig_benchmark(plt, store) -> bool:
-    """Thread scaling (speed-up and efficiency) and CPU vs GPU fit times, per machine."""
+def benchmark_repeats_by_environment() -> list:
+    """The benchmark repeats of every environment, as (label, frame) pairs.
+
+    The plain files reports/m3/m3_benchmark/<environment>/benchmark_repeats.csv are used when any exist: they are what benchmark.py
+    writes on every machine, and the only form in which a VM's results reach another machine. Without them, the runs in the MLflow
+    store are used, labelled by their environment tag (or machine type).
+    """
+    files = sorted((REPORTS_DIR / "m3" / "m3_benchmark").glob("*/benchmark_repeats.csv"))
+    if files:
+        return [(path.parent.name, pd.read_csv(path)) for path in files]
     runs = get_runs("m3_benchmark")
-    if runs.empty:
-        print("benchmark: no m3_benchmark runs; skipped.")
-        return False
-    repeats = []
+    found = []
     for _, run in runs.iterrows():
         frame = artifact_csv(run["run_id"], "benchmark_repeats.csv")
         if frame is not None:
-            repeats.append(frame.assign(machine=run.get("tags.machine_type", "machine")))
+            label = run.get("tags.environment")
+            found.append((label if isinstance(label, str) and label != "not set" else run.get("tags.machine_type", "machine"), frame))
+    return found
+
+
+def fig_benchmark(plt, store) -> bool:
+    """Thread scaling (speed-up and efficiency) and CPU vs GPU fit times, per environment (laptop, CPU VM, GPU VM)."""
+    repeats = [frame.assign(machine=label) for label, frame in benchmark_repeats_by_environment()]
     if not repeats:
-        print("benchmark: no benchmark_repeats.csv artefacts; skipped.")
+        print("benchmark: no m3_benchmark results (neither reports/m3/m3_benchmark/<environment>/ nor MLflow runs); skipped.")
         return False
     data = pd.concat(repeats, ignore_index=True)
     fig, axes = plt.subplots(1, 4, figsize=(19, 4.6))
