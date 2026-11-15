@@ -9,7 +9,7 @@
 > repository or in the Milestone 2 evidence. No slot may be left in the final file, and no number may be typed in that is not in the
 > exported run tables (`reports/m3/run_summary.csv`) or the final evaluation table (`reports/final/`).
 > The numbers in sections 1, 4, 5 and 7 describe the tuned model (XGBoost, E7c configuration, absolute-error objective,
-> `models/xgboost/v3`); if a different model is frozen they are replaced by that model's.
+> `models/xgboost/v3`), which was frozen on 2026-11-15.
 
 ---
 
@@ -201,5 +201,4 @@ the next `models/xgboost/v<N>/`. In the container: `docker build -t pm25-m3:cpu 
 | Version | Date | Change | Dataset run ID | Development MAE |
 |---|---|---|---|---|
 | 1 (starting values) | 2026-11-14 | XGBoost, starting hyperparameters, absolute-error objective, no place inputs (`models/xgboost/v2`) | 20261019T213934Z | 3.152 |
-| 2 (tuned) | 2026-11-15 | The same model with the E7c configuration, early stopping on an inner window (`models/xgboost/v3`) | 20261019T213934Z | 3.147 |
-| [Insert: frozen version, if different] | [Insert] | [Insert] | 20261019T213934Z | [Insert] |
+| 2 (tuned, frozen 2026-11-15) | 2026-11-15 | The same model with the E7c configuration, early stopping on an inner window (`models/xgboost/v3`); frozen for the final evaluation | 20261019T213934Z | 3.147 |
