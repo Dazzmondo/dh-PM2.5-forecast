@@ -1,0 +1,40 @@
+{
+  "git_commit": "16a05c6f3929f6f2ce952a4078811fa17f48e109",
+  "features_file_sha256": "b2cd1f6ecfdb5d313688538dc415c3768aa987e0002f2b559b4d05895695ffc4",
+  "block_table_sha256": "f3d9209ded925b93c10c60ae9ea740cd031e3ea56c868abd465e607d8e9d45a3",
+  "dataset_run_id": "20261019T213934Z",
+  "image_digest": "not in a container",
+  "environment": "laptop",
+  "python": "3.14.2",
+  "lib_numpy": "2.5.3",
+  "lib_pandas": "3.0.6",
+  "lib_pyarrow": "25.0.1",
+  "lib_scikit-learn": "1.9.1",
+  "lib_xgboost": "3.4.1",
+  "lib_torch": "2.15.0",
+  "lib_mlflow": "3.18.0",
+  "lib_optuna": "5.0.0",
+  "lib_pyyaml": "6.0.3",
+  "machine_machine": "DESKTOP-D0UET83",
+  "machine_os": "Windows-11-10.0.26100-SP0",
+  "machine_cpu": "Intel64 Family 6 Model 142 Stepping 12, GenuineIntel",
+  "machine_logical_cores": "8",
+  "machine_gpu": "none",
+  "machine_cuda": "none",
+  "machine_type": "laptop-i7-8565U",
+  "region": "",
+  "physical_cores": 4,
+  "hourly_rate": null,
+  "cpu_only_rate": null,
+  "tests": [
+    "xgb_threads",
+    "xgb_device",
+    "gru_device"
+  ],
+  "skipped": [
+    "xgb_device / cuda: no CUDA GPU or no CUDA build of XGBoost on this machine",
+    "xgb_device / cuda: no CUDA GPU or no CUDA build of XGBoost on this machine",
+    "gru_device / cuda: no CUDA GPU available to PyTorch on this machine"
+  ],
+  "benchmark_wall_seconds": 1994.5617767999647
+}

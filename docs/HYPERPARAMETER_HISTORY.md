@@ -75,7 +75,7 @@ hyperparameter was varied alone. The noise-floor check (15 evaluations of three 
 | | search design | | TPE, 40 trials (the first 10 random), one sampler seed, one model seed; loss fixed at L1; weight decay not searched | A budget that fits a laptop; L1 won every pair in E9a; the learning curves show no over-fitting | Search took 9.7 hours |
 | E9b outcome | all five | 32, 1, 0, 0.003, 256 | 32 units, 2 layers, dropout 0.0841, learning rate 0.000787, batch 256 | The trial with the lowest selection-fold objective (3.3650; three-seed mean 3.371) | The six best trials are within 0.003 and cannot be separated |
 
-At the freeze (2026-11-15) the GRU batch size was kept at 256. A larger batch (512 or 1,024) would cut the time per epoch (on the CPU, from 4.0 s at 256 to 2.1 s at 1,024 in the earlier profile), but XGBoost is the stronger and cheaper model, so a small saving on the GRU does not change the project's conclusion; and the saving is not clear-cut (fewer updates per epoch can mean more epochs, batch 1,024 was about 0.5% worse in the search, and the tuned learning rate belongs to batch 256).
+At the freeze (2026-11-15) the GRU batch size was kept at 256. A larger batch (512 or 1,024) would cut the time per epoch (on the laptop CPU, from 6.0 s at 256 to 3.7 s at 1,024 in the profile of the tuned GRU), but XGBoost is the stronger and cheaper model, so a small saving on the GRU does not change the project's conclusion; and the saving is not clear-cut (fewer updates per epoch can mean more epochs, batch 1,024 was about 0.5% worse in the search, and the tuned learning rate belongs to batch 256).
 
 ## 5. What is learned, not set (parameters)
 
