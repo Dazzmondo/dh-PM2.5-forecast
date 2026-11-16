@@ -29,3 +29,4 @@ metadata/source_metadata/
 # --- M3 ---
 mlruns/
 models/
+reports/m3/profiling/*/trace.json
