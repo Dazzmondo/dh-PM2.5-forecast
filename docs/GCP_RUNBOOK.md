@@ -276,7 +276,7 @@ echo $IMAGE_ID
 | Time each VM was running, and the approximate cost | VM start and stop times × the rate |
 
 The results are written as plain files: `reports/m3/m3_benchmark/<environment>/` (repeats, summary and `machine.json`), `reports/m3/profiling/<device>/`
-and the logged reproduction runs. Export the run tables on each VM, then copy the results back **from the laptop** into the repository's
+and the logged reproduction runs. Each profile folder also holds a large Chrome trace (`trace.json`, tens of MB; larger on the GPU VM), which is listed in `.gitignore` and must not be committed. Export the run tables on each VM, then copy the results back **from the laptop** into the repository's
 `reports/` folder, where `plot_results.py` finds them:
 
 ```
