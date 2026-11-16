@@ -152,6 +152,7 @@ git clone https://github.com/Dazzmondo/dh-PM2.5-forecast.git
 cd dh-PM2.5-forecast
 git checkout <COMMIT>
 git rev-parse HEAD
+gcloud --version        # the Google Cloud CLI must be present on the VM image; if not, install it from Google's instructions first
 mkdir -p processed_data/features processed_data/scalers
 gcloud storage cp gs://<BUCKET>/processed/features/pm25_features.parquet processed_data/features/pm25_features_with_splits.parquet
 gcloud storage cp gs://<BUCKET>/processed/three_hour/three_hour_aggregated.parquet processed_data/three_hour_aggregated.parquet
@@ -211,6 +212,8 @@ On the GPU VM:
 RUN="docker run --rm --gpus all -v $PWD/processed_data:/app/processed_data:ro -v $PWD/mlruns:/app/mlruns -v $PWD/reports:/app/reports -e DATASET_RUN_ID=<DATASET_RUN_ID> -e IMAGE_DIGEST=$IMAGE_ID -e RUN_ENVIRONMENT=gcp-gpu-vm pm25-m3:gpu"
 ```
 
+If you reconnect to a VM (for example after the GPU driver restart), define `IMAGE_ID` (`docker image inspect ... --format '{{.Id}}'`, step 8) and `RUN` again: shell variables do not survive a new session.
+
 **9a. A few-minute check (its own experiment, not a result), on both VMs:**
 
 ```
@@ -220,7 +223,7 @@ $RUN src/benchmark.py --config configs/compute_benchmark_check.yaml --machine-ty
 On the GPU VM use `--machine-type n1-standard-8-t4`. On the GPU VM it must finish without a SKIPPED line for `cuda`, and the summary must list
 `cuda` rows for `xgb_device` and `gru_device`; if a `cuda` test is skipped, the GPU is not visible to the container, so go back to step 6. On
 the CPU VM two SKIPPED lines for `cuda` are expected. Delete the check's folder afterwards
-(`rm -r reports/m3/m3_benchmark_check`) so it is not copied back as a result.
+(`sudo rm -r reports/m3/m3_benchmark_check`: the container runs as root, so the files it writes into the mounted folders belong to root) so it is not copied back as a result.
 
 **9b. The CPU VM tests** (nothing else running on the VM):
 
@@ -229,8 +232,8 @@ $RUN src/benchmark.py --config configs/compute_benchmark.yaml --machine-type n1-
 ```
 
 This runs all three tests on the CPU (the `cuda` rows are skipped and said so). The tuned XGBoost needs about 3,700 rounds per fit, and the
-thread-scaling test fits it 6 times (a discarded warm-up and 5 repeats) at each of 4 thread counts, so this is the longest step: the tuned
-8-thread fit took about 100 seconds on the laptop, so expect on the order of an hour or more (an estimate, not measured on a VM).
+thread-scaling test fits it 6 times (a discarded warm-up and 5 repeats) at each of 4 thread counts, so this is the longest step: on the idle laptop the same
+benchmark took 33 minutes (the tuned 8-thread fit took 43 s there), so expect roughly half an hour to an hour (an estimate, not measured on a VM).
 
 **9c. The GPU VM tests** (the rates: the GPU machine, and the same machine without the GPU for the CPU rows):
 
@@ -293,7 +296,7 @@ gcloud compute scp --recurse pm25-bench-gpu:~/dh-PM2.5-forecast/reports/m3/run_s
 ```
 
 (Create `reports/m3_gcp` first.) The VMs' MLflow databases record their container paths, so view the results from these files, not by opening a
-VM's database on the laptop. Run the same benchmark on the laptop with `RUN_ENVIRONMENT=laptop`, natively in the project's virtual environment (the pinned versions and Python 3.14.2 are the same as in the image, and the MLflow artefact paths of the laptop runs stay valid on the laptop; a container run would record container paths in the laptop's store). The folder `reports/m3/m3_benchmark/laptop/` is then written in place. Then draw the comparison:
+VM's database on the laptop. The laptop leg was run natively in the project's virtual environment with `RUN_ENVIRONMENT=laptop` (the pinned versions and Python 3.14.2 are the same as in the image, and the MLflow artefact paths of the laptop runs stay valid on the laptop; a container run would record container paths in the laptop's store), so `reports/m3/m3_benchmark/laptop/` is already in the repository. The VM runs use a later commit than the laptop run (`16a05c6`), which differs from it only in documentation and in a docstring. Then draw the comparison:
 
 ```
 python src/plot_results.py --figure benchmark
