@@ -42,8 +42,10 @@ credential, a project ID or a bucket name; none belongs in the repository.
    starts with a GPU limit of 0 and approval can take time, so request it first.
 2. **Credits.** Console → Billing → Credits: check the expiry date and the remaining balance, so the session happens before they run out
    and fits inside the balance.
-3. **Budget alert.** Console → Billing → Budgets & alerts → Create budget, with alerts at a small amount. This is the safety net if a VM
-   is left running.
+3. **Budget alert.** Console → Billing → Budgets & alerts → Create budget, scoped to this project, with alerts at 50%, 90% and 100% of a small
+   amount (and a forecast alert). Choose **alerts only**: a spend cap pauses services and could stop a run part-way. Untick every credit under
+   Savings, so that the budget tracks the cost before credits (otherwise credits cancel the spend and the alert never fires). This is the safety net
+   if a VM is left running; it sends e-mails and stops nothing, so the VMs are still deleted as soon as the results are copied back (step 11).
 4. **Code.** Commit and push everything the runs need. The VMs clone the repository, so only pushed code reaches them; `<COMMIT>` is the
    commit you pushed.
 5. **A quiet machine.** Nothing else may run on a VM during a timed test. Start a VM only when ready, and delete it as soon as its results are
@@ -72,19 +74,45 @@ gcloud storage buckets add-iam-policy-binding gs://<BUCKET> --member="serviceAcc
 The CPU VM:
 
 ```
-gcloud compute instances create pm25-bench-cpu --project=<PROJECT_ID> --zone=<ZONE> --machine-type=n1-standard-8 --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=50GB --boot-disk-type=pd-balanced --service-account=pm25-benchmark@<PROJECT_ID>.iam.gserviceaccount.com --scopes=storage-ro --labels=project=pm25-m3,purpose=benchmark
+gcloud compute instances create pm25-bench-cpu --project=<PROJECT_ID> --zone=<ZONE> --machine-type=n1-standard-8 --min-cpu-platform="Intel Skylake" --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=50GB --boot-disk-type=pd-balanced --service-account=pm25-benchmark@<PROJECT_ID>.iam.gserviceaccount.com --scopes=storage-ro --labels=project=pm25-m3,purpose=benchmark
 ```
 
 The GPU VM:
 
 ```
-gcloud compute instances create pm25-bench-gpu --project=<PROJECT_ID> --zone=<ZONE> --machine-type=n1-standard-8 --accelerator=type=nvidia-tesla-t4,count=1 --maintenance-policy=TERMINATE --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=100GB --boot-disk-type=pd-balanced --service-account=pm25-benchmark@<PROJECT_ID>.iam.gserviceaccount.com --scopes=storage-ro --labels=project=pm25-m3,purpose=benchmark
+gcloud compute instances create pm25-bench-gpu --project=<PROJECT_ID> --zone=<ZONE> --machine-type=n1-standard-8 --accelerator=type=nvidia-tesla-t4,count=1 --maintenance-policy=TERMINATE --min-cpu-platform="Intel Skylake" --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud --boot-disk-size=100GB --boot-disk-type=pd-balanced --service-account=pm25-benchmark@<PROJECT_ID>.iam.gserviceaccount.com --scopes=storage-ro --labels=project=pm25-m3,purpose=benchmark
 ```
 
 - A GPU VM must use `TERMINATE` on host maintenance. If `gcloud` reports the flag as deprecated, `--on-host-maintenance=TERMINATE` is the newer spelling.
 - `n1-standard-8` has 8 vCPUs; on Google Cloud a vCPU is a hyperthread, so these are 4 physical cores, the same thread count as the
   laptop. The GPU VM's disk is larger because the GPU image holds the CUDA build of PyTorch.
 - Both are on-demand VMs, not Spot VMs: a timing run must not be pre-empted. The labels let the charge be found in Billing reports.
+
+`--min-cpu-platform` fixes the processor generation of both VMs (an N1 VM can otherwise land on different generations); if `gcloud` rejects it, drop that one flag and record the processor with `lscpu` (step 10). The same settings are chosen in the console form: Secure Boot off, no backups or snapshot schedule, the Ops Agent not installed, no HTTP/HTTPS firewall rules, an ephemeral external address, Google-managed encryption, deletion protection off, the boot disk deleted with the VM, and the service account `pm25-benchmark` with only the read-only Storage access scope.
+
+### Why these settings
+
+| Setting | Choice | Reason |
+|---|---|---|
+| Compute service | Compute Engine virtual machines, created with `gcloud` | Each test needs one machine whose hardware is known and which is started and stopped on demand, so that a timed run is not disturbed. Kubernetes Engine would put a scheduling layer and a more involved GPU set-up between the code and the hardware, and its overhead would enter the measurements; it is relevant to serving (Milestone 4), not to this benchmark |
+| Region and zone | `europe-west2` (London), zone `europe-west2-a`, for both VMs | The T4 is offered in this zone and the project's GPU quota is in this region. One zone keeps the two VMs on the same pool of hardware. A zone cannot be changed after creation, so it is named and not left to "any" |
+| Machine type | `n1-standard-8` (8 vCPUs, 30 GB) on both VMs | The T4 attaches to N1 machine types, so the GPU VM has to be N1. Giving the CPU VM the same type makes the GPU the only difference between the two. Eight vCPUs are 4 physical cores with 2 threads each, the same thread count as the laptop, so the thread-scaling results can be compared across the three machines |
+| Minimum CPU platform | Intel Skylake or later, on both VMs | An N1 VM can be placed on different generations of Intel processor. A minimum fixes the generation, so that the CPU timings of the two VMs are comparable; the model actually used is recorded with `lscpu` |
+| Threads per core | the default (2) | Gives the 4 cores with 2 threads each that the benchmark records (`--physical-cores 4`); all cores are visible to the VM |
+| Provisioning model | Standard (on demand), not Spot | A Spot VM can be pre-empted, which would stop a timed run |
+| GPU VM only | one NVIDIA T4; host maintenance set to terminate | The T4 is the GPU the project's quota allows, and the CUDA build of PyTorch used in the image includes support for it (compute capability 7.5). A VM with a GPU cannot be live-migrated, so terminate is the only maintenance setting it accepts |
+| Operating system | Ubuntu 22.04 LTS (x86-64) | A free image with long-term support, and one that Google's NVIDIA driver installer and Docker's installation script list as supported. The software environment of every run is the Docker image (Python 3.14.2 and pinned libraries), so the host operating system affects only the installation of Docker and of the GPU driver; its version is recorded with the results |
+| Boot disk | balanced persistent disk; 50 GB (CPU VM) and 100 GB (GPU VM); deleted together with the VM | Balanced is the general-purpose disk type. A run reads a few hundred megabytes once and is limited by the processor, so disk speed does not enter the timings. The sizes hold the operating system, Docker, the image and the data; the GPU image is larger because it contains the CUDA build of PyTorch, and the GPU VM also holds the driver. Deleting the disk with the VM avoids a charge for a disk left behind |
+| Software and data | a Docker image built on the VM from the pushed commit; the data copied from the bucket and checked against the dataset's SHA-256 hashes | The same code, the same pinned libraries and the same dataset on every machine, with the check showing that it is the dataset the experiments used |
+| Identity and access | a dedicated service account (`pm25-benchmark`) with the Storage Object Viewer role on the bucket only, and only the read-only Storage access scope | The runs only read the processed data. With the least privilege that works, the VM cannot write to or delete anything in the bucket, and cannot call any other Google Cloud API |
+| Network | the default network; a temporary external IP address; no HTTP, HTTPS or health-check firewall rules | The VM needs outbound access to install Docker, to fetch the image's layers and to read the bucket, and inbound SSH (already allowed by the default network). It runs no service, so no web ports are opened |
+| Monitoring agent | the Ops Agent is not installed | A background agent would use processor time during the timed tests; the benchmark records its own timings and memory |
+| Backups and replication | none | Everything on the VM can be recreated from the repository and the bucket, and the results are copied off the VM before it is deleted. Snapshots are not deleted with the VM and would keep a storage charge |
+| Secure Boot | off, on both VMs | Secure Boot only loads signed kernel modules, which can stop the NVIDIA driver module from loading on the GPU VM; the same setting on both keeps the VMs alike |
+| Encryption | Google-managed keys (the default) | The data are derived from public sources and nothing on the VM is secret, so customer-managed keys would add key management without a benefit |
+| Deletion protection | off | So that the VM can be deleted as soon as the results have been copied back |
+| Labels | `project=pm25-m3`, `purpose=benchmark` | The charge for the session can be found in the billing reports |
+| Cost control | a budget with e-mail alerts at 50%, 90% and 100% of the amount (and a forecast alert), alerts only, tracking the cost before credits | A budget only sends e-mails; a spend cap would pause the services and could stop a run part-way. Tracking the cost before credits stops credits from cancelling the spend and silencing the alert. The hourly rates used for the cost figures are the on-demand prices of the machine and the GPU without the monthly sustained-use discount, which applies only to machines that run for much of a month |
 
 Connect to a VM (the rest of the steps run on it unless a step says "from the laptop"):
 
