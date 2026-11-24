@@ -13,7 +13,7 @@
 | Field | Content |
 |---|---|
 | Model | XGBoost regressor, absolute-error objective; PM2.5 history and time features only, no place inputs; folder `models/xgboost/v3/` (the folder number counts every saved XGBoost model; `v1` is the earlier squared-error model and `v2` the starting-values model) and the same path, `models/xgboost/v3/`, in the project's Google Cloud Storage bucket (uploaded on 2026-11-24: four files, 22,248,138 bytes, with its record in `manifests/model_versions.jsonl`, which names the dataset run, the raw-data version, the scaler hash, the MLflow run and the commit) |
-| Type | Gradient-boosted decision trees (XGBoost 3.4.1, histogram tree method). Why: it handles non-linear structure and interactions in tabular inputs without scaling, was 9.3% better than ridge regression on the development year (MAE 3.147 against 3.471), and was 1.3% better and about three to four times cheaper to fit than the tuned GRU (114 s against 316–492 s for the 2024 fit on the same laptop) (sections 2, 3.2 and 5 of `docs/M3.md`) |
+| Type | Gradient-boosted decision trees (XGBoost 3.4.1, histogram tree method). Why: it handles non-linear structure and interactions in tabular inputs without scaling, was 9.4% better than ridge regression on the development year (MAE 3.147 against 3.471), and was 1.3% better and about three to four times cheaper to fit than the tuned GRU (114 s against 316–492 s for the 2024 fit on the same laptop) (sections 2, 3.2 and 5 of `docs/M3.md`) |
 | Task | Regression: the mean PM2.5 concentration (µg/m³) of the 3-hour block that starts six hours after the current block, for one monitoring station |
 | Forecast origin | A fixed 3-hour UTC block that has just finished; the forecast is for the block two blocks later (target = block t+2) |
 | Output | One number per station and block (a point forecast; no uncertainty interval is produced) |
@@ -152,24 +152,24 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
   loses to persistence for this model. The squared-error version of the model does lose in the lowest band (at or below 5 µg/m³: skill
   −0.04), which is one reason for the absolute-error objective; the cost is poorer peaks (above 25 µg/m³: MAE 16.2 against 14.9).
 - **Isolated spikes.** The worst 1% of errors (312 rows, an absolute error above 19.6 µg/m³) are 91% under-predictions of surges that
-  start from a low current value (mean target 48.3 against 9.1 for all rows); persistence is wrong by about as much in most of them, so
+  start from a low current value (mean target 49.0 against 9.1 for all rows); persistence is wrong by about as much in most of them, so
   no method that uses only the station's history catches them. Athens Aristotelous supplies 25% of them with 8.5% of the rows;
   Limerick and Waterford have an RMSE two to three times their MAE.
 - **Season and time of day.** The error is largest in the heating season (November to March: 42% of the rows, 53% of the error) and for
   targets in the evening (18:00–23:59 local time: 25% of the rows, 33% of the error).
 - **Unseen places.** In the place ablation (leave-one-city-out, 2023, ridge and XGBoost), latitude, longitude and country as inputs
-  did not improve the pooled error (−0.6% to +1.9%, none adopted); they improved the five Irish cities a little (1.6–2.4% on average)
-  and not the four cities that are alone in their country, and "all three" was much worse for ridge (Belfast +106%). The gap between
+  did not improve the pooled error by the 1% the rule requires (changes from −0.6% to +17.2%, none adopted); ridge with latitude and
+  longitude and XGBoost with country improved the five Irish cities a little (1.6–2.4% on average) and not the four cities that are alone in their country, and "all three" was much worse for ridge (Belfast +106%). The gap between
   the seen stations and the held-out cities on the same year is small in error (MAE 3.038 against 3.069) and larger in skill (0.179 against 0.118), because the held-out cities' persistence error is lower (3.480; London 2.832, skill 0.034).
 - **Data limitations.** One sensor and one data source per station, so errors cannot be separated from instrument effects. The Irish
   data are provisional and unvalidated, start only in 2022 and cover two training years. The hour convention of the Irish files is
-  inferred, and the one-hour alternative was not tested (`docs/M3.md`, section 10). Cork UCC has many negative readings (about 19% of
+  inferred, and the one-hour alternative was not tested (`docs/M3.md`, section 10). Cork UCC has many negative readings (about 18% of
   its 2022–2023 targets) and an unexplained change in 2024 (its level rose by about 70% and the share of negative hours fell from about
   20% to 7.6%). Copenhagen has no valid 2025 hours and Kilmainham few. France is not in the training data, and Great Britain only
   through Belfast.
-- **Temporal change.** Skill is lower on 2024 (0.185) than on the training years the model was fitted on (0.25–0.30, in-sample),
+- **Temporal change.** Skill is lower on 2024 (0.187) than on the training years the model was fitted on (0.21–0.26, in-sample),
   mainly because persistence is a stronger baseline in 2024 (MAE 3.869, the lowest of any year); the model's MAE is similar (3.15 in 2024,
-  2.88–3.22 in the training years). The 2025 test split gives an MAE of 3.038 and a skill of 0.179 (persistence 3.699, lower than in 2024), so the absolute error did not rise and the skill is close to 2024's. This is described as a performance change; whether it is
+  3.02–3.37 in the training years). The 2025 test split gives an MAE of 3.038 and a skill of 0.179 (persistence 3.699, lower than in 2024), so the absolute error did not rise and the skill is close to 2024's. This is described as a performance change; whether it is
   drift is not established.
 - **Design limits.** An 8-block (24-hour) history and no weather inputs; point forecasts only; the final model was not refitted on 2024.
 - **Statistical limits.** Three seeds indicate variability and do not prove significance; the 1% adoption threshold is a heuristic.

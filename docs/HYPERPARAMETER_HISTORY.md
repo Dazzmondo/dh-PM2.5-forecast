@@ -36,7 +36,7 @@ it means hyperparameter. No learned parameter is ever set by hand.
 | | lambda, alpha | | 0.001 to 10 each, log | As above | |
 | | gamma | | 0 to 5 | As above | |
 | | rounds cap | | 2,000 | A budget limit; early stopping picks the actual number | Two studies reached it (2,000 and 1,980), which is why E7c raises it |
-| | search design | | Random search and TPE, seeds 0–2, 50 trials each (300 trials per experiment); E7 squared error, E7b absolute error | Equal budgets, so that the extra cost of Bayesian search can be judged; E7b repeats E7 once the absolute-error objective had won E6b | E7 gained 0.45% and E7b 0.29–0.36% on the selection folds; random and TPE differ by 0.001 |
+| | search design | | Random search and TPE, seeds 0–2, 50 trials each (300 trials per experiment); E7 squared error, E7b absolute error | Equal budgets, so that the extra cost of Bayesian search can be judged; E7b repeats E7 once the absolute-error objective had won E6b | E7 gained 0.45% and E7b 0.29–0.36% on the selection folds; random and TPE differ by 0.001 (E7) and 0.002 (E7b) |
 | E7c: narrowed ranges | learning rate | 0.01 to 0.3 | 0.005 to 0.05, log | E7 and E7b winners lay at 0.012–0.042; the lower end is extended because hypothesis T1 predicts slower learning with more rounds | |
 | | max depth | 3 to 10 | 5 to 9 | Winners were 6 to 9, mostly 7 | |
 | | min child weight | 1 to 20 | 5 to 30 | Winners were 1 to 19; hypothesis T3 predicts a larger value helps | |
