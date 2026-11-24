@@ -198,7 +198,7 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
 From a fresh checkout of the repository (Python 3.14.2):
 
 ```bash
-python -m venv .venv && source .venv/Scripts/activate      # PowerShell: .\.venv\Scripts\Activate.ps1
+python -m venv .venv && source .venv/Scripts/activate      # Git Bash on Windows. PowerShell: .\.venv\Scripts\Activate.ps1. Linux and macOS: source .venv/bin/activate
 pip install -r requirements.txt                            # exact pinned versions
 ```
 
@@ -223,3 +223,5 @@ Clean-run check: a fresh clone of the repository (commit `8852fef`), built into 
 |---|---|---|---|---|
 | 1 (starting values) | 2026-11-14 | XGBoost, starting hyperparameters, absolute-error objective, no place inputs (`models/xgboost/v2`) | 20261019T213934Z | 3.152 |
 | 2 (tuned, frozen 2026-11-15) | 2026-11-15 | The same model with the E7c configuration, early stopping on an inner window (`models/xgboost/v3`); frozen for the final evaluation | 20261019T213934Z | 3.147 |
+
+Release numbers count the two releases of this model; folder numbers count every saved XGBoost model, so release 2 is `models/xgboost/v3` (`v1` was an earlier squared-error model that was never a release).
