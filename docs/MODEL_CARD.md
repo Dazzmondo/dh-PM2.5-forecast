@@ -155,7 +155,7 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
   start from a low current value (mean target 48.3 against 9.1 for all rows); persistence is wrong by about as much in most of them, so
   no method that uses only the station's history catches them. Athens Aristotelous supplies 25% of them with 8.5% of the rows;
   Limerick and Waterford have an RMSE two to three times their MAE.
-- **Season and time of day.** The error is largest in the heating season (November to March: 42% of the rows, 54% of the error) and for
+- **Season and time of day.** The error is largest in the heating season (November to March: 42% of the rows, 53% of the error) and for
   targets in the evening (18:00–23:59 local time: 25% of the rows, 33% of the error).
 - **Unseen places.** In the place ablation (leave-one-city-out, 2023, ridge and XGBoost), latitude, longitude and country as inputs
   did not improve the pooled error (−0.6% to +1.9%, none adopted); they improved the five Irish cities a little (1.6–2.4% on average)
@@ -187,7 +187,7 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
 
 - Compare any use of the model with persistence on the same rows, and report the per-station errors with row counts.
 - Re-evaluate before using the model for a different station, city, country, season length or sensor type.
-- For higher concentrations, do not read a low forecast (below about 25 µg/m³) as evidence that a high-concentration episode will not happen: the model under-predicts such episodes (bias −14.9 µg/m³ when the actual value is above 25), until the under-prediction in section 8 has been addressed. The evidence
+- For higher concentrations, do not read a low forecast (below about 25 µg/m³) as evidence that a high-concentration episode will not happen: the model under-predicts such episodes (on the final data, bias −14.9 µg/m³ when the actual value is above 25), until the under-prediction in section 8 has been addressed. The evidence
   points to inputs beyond the station's own PM2.5 history (weather, other pollutants, nearby stations; future work) as the main
   improvement, because the largest failures are surges that nothing in the history foreshadows; a loss or output aimed at the upper tail
   and a blend of the XGBoost and GRU models are further hypotheses, not tested (`docs/M3.md`, section 9.5).
