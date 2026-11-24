@@ -23,7 +23,7 @@
 | Forecast origin | A fixed 3-hour UTC block that has just finished; the forecast is for the block two blocks later (target = block t+2) |
 | Output | One number per station and block (a point forecast; no uncertainty interval is produced) |
 | Framework and versions | Python 3.14.2; xgboost 3.4.1; scikit-learn 1.9.1; torch 2.15.0 (GRU); pandas 3.0.6; numpy 2.5.3; pyarrow 25.0.1 (exact versions in `requirements.txt`) |
-| Code | commit `0fbdf710f7daaeb063f9890afc1706e700b1819f` (the working tree had uncommitted changes); MLflow run `92f101e7bb67465cbfd00d16bfaa31be` (experiment `m3_candidates`, configuration `configs/xgboost_tuned_v1.yaml`); trained outside a container; container image [Insert: image ID or registry digest of the run that re-trained it] |
+| Code | commit `0fbdf710f7daaeb063f9890afc1706e700b1819f` (the working tree had uncommitted changes); MLflow run `92f101e7bb67465cbfd00d16bfaa31be` (experiment `m3_candidates`, configuration `configs/xgboost_tuned_v1.yaml`); trained outside a container; container image `sha256:1d496aae27a9fd9ef3695ebcdc39114a4f7b3c42332c8752aa4ce77d3a595ed9` (the CPU image that re-trained it from a fresh clone, commit `8852fef`, on a Google Cloud VM) |
 | Trained on | 2026-11-15, on a laptop (Intel i7-8565U, 4 physical cores / 8 threads, 15.8 GB RAM, no GPU); the fits of the three selection folds and of the 2024 model took 339 s in total (114 s for the 2024 fit); the model file is 22 MB; inference takes 22.9 ms per 1,000 rows |
 | Reference model | Persistence (the current block is the forecast): MAE 3.869 µg/m³, RMSE 7.99 on the development year (Milestone 2) |
 
@@ -79,9 +79,9 @@ noise (sd 0.001–0.002) and below the 1% adoption threshold, which applies to v
 - **Development year.** Fit on 2018–2023, score on 2024 (31,192 rows; all 12 stations seen).
 - **Final evaluation, once.** The frozen model was scored once on the 2025 test split (stations seen in training) and on the held-out
   cities (never seen). No refit on 2024, so the model has not seen 2024.
-- **Seeds and hardware.** Seed 1 for the tuned XGBoost model (it samples rows and columns, so the seed changes the trees; the seed alone moves the selection-fold MAE by about 0.001–0.002); seeds 0, 1 and 2 for the GRU comparison and the hyperparameter searches. Laptop (section 1); the benchmark and profile on a cloud VM are [Insert].
+- **Seeds and hardware.** Seed 1 for the tuned XGBoost model (it samples rows and columns, so the seed changes the trees; the seed alone moves the selection-fold MAE by about 0.001–0.002); seeds 0, 1 and 2 for the GRU comparison and the hyperparameter searches. Laptop (section 1); the benchmark, the profile and a reproduction run on a Google Cloud CPU VM (`n1-standard-8`: 4 physical cores, Xeon at 2.0 GHz) are in section 6.3 of `docs/M3.md`; the CPU-against-GPU benchmark, the GPU profile and two reproduction runs on a Google Cloud GPU VM (`n1-standard-8` with one NVIDIA T4) are in the same section.
 - **Reproducibility.** Section 7 of `docs/M3.md`: pinned versions, container image, configuration file, dataset and run IDs, and the
-  clean re-run result [Insert].
+  clean re-run result: selection-fold MAE 3.3409 and 2024 MAE 3.1452 from a fresh clone in a container on a VM, against the logged 3.3393 and 3.1466, inside the tolerance (section 7).
 
 ## 6. Metrics
 
@@ -160,7 +160,7 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
   course use, why persistence is always shown beside it, and why section 8 states where it fails.
 - Skill differs between cities and countries (the evidence is limited by the small number of stations and the short Irish record), so
   results for one place should not be assumed for another.
-- Compute used for the experiments: the experiments so far were run on a personal laptop, at no cloud cost, to protect the cloud credits; the benchmark and profile on GCP VMs are [Insert: the VM time and approximate cost of training and benchmarking].
+- Compute used for the experiments: the experiments so far were run on a personal laptop, at no cloud cost, to protect the cloud credits; the CPU VM session on Google Cloud lasted 1 hour 14 minutes, about 0.60 at an assumed list price of 0.49 per hour (an estimate in US dollars, not the billed charge); the GPU VM session lasted about 1 hour 2 minutes, about 0.93 at an assumed 0.9 per hour (an estimate); [Insert: the billed charges of both sessions].
 
 ## 10. Caveats and recommendations
 
@@ -194,7 +194,7 @@ Expected: selection-fold MAE 3.3393 and development-year MAE 3.1466 (persistence
 the next `models/xgboost/v<N>/`. In the container: `docker build -t pm25-m3:cpu --build-arg GIT_COMMIT=$(git rev-parse HEAD) .`, then
 `docker run --rm -v "$PWD/processed_data:/app/processed_data:ro" -v "$PWD/mlruns:/app/mlruns" -v "$PWD/reports:/app/reports" pm25-m3:cpu src/train.py --config configs/xgboost_tuned_v1.yaml`
 (a CPU container reproduced the host metrics of the starting XGBoost configuration exactly. For the tuned configuration, which samples rows and columns, the CPU container on the Windows laptop (Linux under WSL2, 8 threads, the same XGBoost 3.4.1) gave selection-fold MAE 3.3409 and development-year MAE 3.1452 against 3.3393 and 3.1466 on the host: not identical, but within the seed-to-seed spread of 0.001–0.004 measured for such configurations, and the early-stopping rounds differ (2,540, 2,243, 4,000 and 3,996 against 2,241, 2,852, 3,996 and 3,682). A reproduction is therefore accepted when the selection-fold MAE is within 0.005 and the 2024 MAE within 0.003 of the host values).
-[Insert: the result of the clean-run check.]
+Clean-run check: a fresh clone of the repository (commit `8852fef`), built into the CPU image on a Google Cloud VM and run with `configs/reproduce_xgboost_tuned_cpu.yaml`, gave selection-fold MAE 3.3409 and development-year MAE 3.1452. These are the same as the CPU container on the laptop (including the early-stopping rounds 2,540, 2,243, 4,000 and 3,996), and within the tolerance of 0.005 and 0.003 of the host values 3.3393 and 3.1466.
 
 ## 12. Version history
 

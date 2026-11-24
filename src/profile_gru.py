@@ -123,11 +123,23 @@ def operator_table(prof, device) -> pd.DataFrame:
 
 
 def phase_table(table: pd.DataFrame, steps: int) -> pd.DataFrame:
-    """Time per phase (from the record_function labels), per training step, with each phase's share of the labelled time."""
-    part = table[table["operator"].isin(PHASES)].set_index("operator").reindex(PHASES)
-    out = pd.DataFrame({"phase": PHASES, "ms_per_step": part["cpu_total_us"].to_numpy() / 1000 / steps})
+    """Time per phase (from the record_function labels), per training step, with each phase's share of the labelled time.
+
+    On a GPU the profiler lists each label twice (a CPU range and a GPU range of the same name); the CPU time is zero on the GPU row,
+    so the largest value per label is the CPU time of the phase. On a CPU each label appears once and the result is unchanged.
+    """
+    cpu_us = table[table["operator"].isin(PHASES)].groupby("operator")["cpu_total_us"].max().reindex(PHASES)
+    out = pd.DataFrame({"phase": PHASES, "ms_per_step": cpu_us.to_numpy() / 1000 / steps})
     out["share"] = out["ms_per_step"] / out["ms_per_step"].sum()
     return out
+
+
+def short_name(name: str, limit: int = 40) -> str:
+    """An operator name short enough for a figure label: no leading 'void ', cut at the first '<' or '(' (a GPU kernel's template and
+    argument list), at most `limit` characters. Names of CPU operators, which are short, are unchanged apart from the 'aten::' prefix."""
+    name = name.replace("aten::", "", 1).removeprefix("void ")
+    name = name.split("<", 1)[0].split("(", 1)[0].strip()
+    return name if len(name) <= limit else name[:limit - 1] + "…"
 
 
 def draw(operators: pd.DataFrame, phases: pd.DataFrame, batch_sweep: pd.DataFrame, thread_sweep: pd.DataFrame, optimiser_sweep: pd.DataFrame,
@@ -136,7 +148,7 @@ def draw(operators: pd.DataFrame, phases: pd.DataFrame, batch_sweep: pd.DataFram
     plt = get_pyplot()
     fig, axes = plt.subplots(1, 5, figsize=(25, 4.8))
     top = operators[operators["is_operator"]].head(10).iloc[::-1]
-    axes[0].barh(top["operator"].str.replace("aten::", "", regex=False), 100 * top["share_of_self_time"], color=BLUE)
+    axes[0].barh(top["operator"].map(short_name), 100 * top["share_of_self_time"], color=BLUE)
     axes[0].set(title="Top 10 operators by self time", xlabel="% of self time")
     axes[1].bar(phases["phase"].str.replace("_", "\n"), phases["ms_per_step"], color=ORANGE)
     axes[1].set(title="Time per training step by phase", ylabel="ms per step (profiled)")
