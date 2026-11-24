@@ -18,7 +18,7 @@
 | Forecast origin | A fixed 3-hour UTC block that has just finished; the forecast is for the block two blocks later (target = block t+2) |
 | Output | One number per station and block (a point forecast; no uncertainty interval is produced) |
 | Framework and versions | Python 3.14.2; xgboost 3.4.1; scikit-learn 1.9.1; torch 2.15.0 (GRU); pandas 3.0.6; numpy 2.5.3; pyarrow 25.0.1 (exact versions in `requirements.txt`) |
-| Code | commit `0fbdf710f7daaeb063f9890afc1706e700b1819f` (the working tree had uncommitted changes); MLflow run `92f101e7bb67465cbfd00d16bfaa31be` (experiment `m3_candidates`, configuration `configs/xgboost_tuned_v1.yaml`); trained outside a container; container image `sha256:1d496aae27a9fd9ef3695ebcdc39114a4f7b3c42332c8752aa4ce77d3a595ed9` (the CPU image that re-trained it from a fresh clone, commit `8852fef`, on a Google Cloud VM) |
+| Code | commit `0fbdf710f7daaeb063f9890afc1706e700b1819f` (the working tree had uncommitted changes; the scores were later reproduced exactly from a clean commit, `docs/M3.md` section 7); MLflow run `92f101e7bb67465cbfd00d16bfaa31be` (experiment `m3_candidates`, configuration `configs/xgboost_tuned_v1.yaml`); trained outside a container; container image `sha256:1d496aae27a9fd9ef3695ebcdc39114a4f7b3c42332c8752aa4ce77d3a595ed9` (the CPU image that re-trained it from a fresh clone, commit `8852fef`, on a Google Cloud VM) |
 | Trained on | 2026-11-15, on a laptop (Intel i7-8565U, 4 physical cores / 8 threads, 15.8 GB RAM, no GPU); the fits of the three selection folds and of the 2024 model took 339 s in total (114 s for the 2024 fit); the model file is 22 MB; inference takes 22.9 ms per 1,000 rows |
 | Reference model | Persistence (the current block is the forecast): MAE 3.869 µg/m³, RMSE 7.99 on the development year (Milestone 2) |
 
@@ -181,13 +181,13 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
   course use, why persistence is always shown beside it, and why section 8 states where it fails.
 - Skill differs between cities and countries (the evidence is limited by the small number of stations and the short Irish record), so
   results for one place should not be assumed for another.
-- Compute used for the experiments: the experiments were run on a personal laptop, at no cloud cost, to protect the cloud credits, and the compute comparison also ran on two Google Cloud virtual machines; the CPU VM session on Google Cloud lasted 1 hour 14 minutes, about 0.60 at an assumed list price of 0.49 per hour (an estimate in US dollars, not the billed charge); the GPU VM session lasted about 1 hour 2 minutes, about 0.93 at an assumed 0.9 per hour (an estimate), after about four hours of refused requests before a T4 was available; training and prediction of this model need only a CPU (the GPU saved 15 seconds per fit and gave no gain in accuracy); [Insert: the billed charges of both sessions].
+- Compute used for the experiments: the experiments were run on a personal laptop, at no cloud cost, to protect the cloud credits, and the compute comparison also ran on two Google Cloud virtual machines; the CPU VM session on Google Cloud lasted 1 hour 14 minutes, about $0.60 at an assumed list price of $0.49 per hour (an estimate, not the billed charge); the GPU VM session lasted about 1 hour 2 minutes, about $0.93 at an assumed $0.9 per hour (an estimate), after about four hours of refused requests before a T4 was available; training and prediction of this model need only a CPU (the GPU saved about 9 seconds per fit and gave no gain in accuracy); [Insert: the billed charges of both sessions].
 
 ## 10. Caveats and recommendations
 
 - Compare any use of the model with persistence on the same rows, and report the per-station errors with row counts.
 - Re-evaluate before using the model for a different station, city, country, season length or sensor type.
-- For higher concentrations, treat forecasts as lower bounds until the under-prediction in section 8 has been addressed. The evidence
+- For higher concentrations, do not read a low forecast (below about 25 µg/m³) as evidence that a high-concentration episode will not happen: the model under-predicts such episodes (bias −14.9 µg/m³ when the actual value is above 25), until the under-prediction in section 8 has been addressed. The evidence
   points to inputs beyond the station's own PM2.5 history (weather, other pollutants, nearby stations; future work) as the main
   improvement, because the largest failures are surges that nothing in the history foreshadows; a loss or output aimed at the upper tail
   and a blend of the XGBoost and GRU models are further hypotheses, not tested (`docs/M3.md`, section 9.5).
