@@ -14,9 +14,29 @@ The profile was taken on two CPUs and one GPU: the development laptop (Intel i7-
 
 *Figure 1.* The profile of the tuned GRU on the CPU VM: time by phase, by operator, and by batch size.
 
-[Insert: Figure 2, a screenshot of the profiler's timeline (`reports/m3/profiling/cpu_vm/trace.json` opened in https://ui.perfetto.dev) zoomed to two or three training steps, with the phases and the many small operators visible. Caption: the forward and backward phases of consecutive steps, and the short operators they consist of.]
+![Four consecutive training steps of the CPU VM profile in Perfetto](images/profile_cpu_vm_timeline_steps.png)
 
-[Insert: Figure 3, a screenshot of the MLflow page of the profile run (experiment `m3_profile`, run `profile_gru_cpu`, environment `gcp-cpu-vm`), showing its metrics and artefacts.]
+*Figure 2a.* The profiler's timeline of the CPU VM run (`reports/m3/profiling/cpu_vm/trace.json` opened in https://ui.perfetto.dev): four consecutive training steps (`ProfilerStep#12` to `#15`), each divided into the forward pass, the backward pass and the optimiser step, with the thousands of short operators beneath them.
+
+![One forward pass of the CPU VM profile, zoomed in](images/profile_cpu_vm_timeline_forward_zoom.png)
+
+*Figure 2b.* The same trace zoomed into a single forward pass (about 1 µs per division): the `aten::gru` call splits into chunks and slices, each a very short operation, which is why the cost is the fixed cost of starting operations and not arithmetic.
+
+![The MLflow page of the profile run](images/profile_mlflow_overview.png)
+
+*Figure 3a.* The MLflow page of the profile run on the laptop (experiment `m3_profile`, run `profile_gru_cpu`, 2026-11-16, commit `16a05c6`): the run's metrics (the page lists the first 14 of 17), its parameters (the first 4 of 8) and its lineage tags (the commit, the data hashes, the dataset run ID, the environment `laptop` and the library versions).
+
+![MLflow charts of the profile run: epoch time and optimiser step time](images/profile_mlflow_metrics_1.png)
+
+*Figure 3b.* MLflow's own charts for the same run (Model metrics tab, filtered to the profile metrics): the estimated epoch time at batch sizes 64, 256, 1,024 and 4,096, and the step time with Adam's default, foreach and fused implementations.
+
+![MLflow charts of the profile run: thread sweep](images/profile_mlflow_metrics_2.png)
+
+*Figure 3c.* The step time with 1, 2, 4 and 8 torch threads, and the backward-pass time.
+
+![MLflow charts of the profile run: phase times](images/profile_mlflow_metrics_3.png)
+
+*Figure 3d.* The time per phase of a training step (choosing the batch, forward pass, loss and optimiser step; the backward pass is in Figure 3c).
 
 ## 2. Where the time goes
 
@@ -36,7 +56,13 @@ The profile was taken on two CPUs and one GPU: the development laptop (Intel i7-
 
 **On the GPU** a training step takes 3.1 ms against 10.3 ms on the CPU VM, but the GPU is not the limit: its kernels account for 38 ms in the 40 profiled steps, about 0.95 ms per step, so it is busy for roughly a third of each step. The rest is the cost of issuing many small operations from the CPU, which is why the time per step barely changes between batches of 256 and 1,024 rows and the epoch time falls by four times (1.5 s to 0.38 s). In the profiler's CPU timings the backward pass takes 55% of the step, the forward pass 21%, the optimiser 16% and choosing the batch and the loss 4% each; on the GPU the largest kernels are the cuDNN GRU backward pass (19% of the GPU time), the Adam step (18%) and the cuDNN forward pass (11%).
 
-[Insert: Figure 4, a screenshot of the GPU timeline (`reports/m3/profiling/cuda/trace.json` in https://ui.perfetto.dev) showing the kernels on the GPU row and the gaps between them.]
+![The CPU side of the GPU profile in Perfetto](images/profile_gpu_timeline_cpu_side.png)
+
+*Figure 4a.* The profiler's timeline of the GPU run (`reports/m3/profiling/cuda/trace.json` opened in https://ui.perfetto.dev), CPU side: three consecutive training steps (`ProfilerStep#10` to `#12`), each with its forward, backward and optimiser phases on the main thread and, below it, the autograd thread that issues the cuDNN backward kernels.
+
+![The GPU streams of the same profile in Perfetto](images/profile_gpu_timeline_gpu_streams.png)
+
+*Figure 4b.* The GPU side of the same steps: the kernels on the GPU streams (stream 7 carries the GRU kernels) come in short bursts separated by idle gaps, which is the launch-bound behaviour described above; the other streams hold a few short kernels.
 
 ## 3. What would make training cheaper, tested
 
