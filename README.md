@@ -17,9 +17,9 @@ Two secondary questions are:
 
 The second question is a hypothesis to be tested rather than an assumption that greater diversity will necessarily improve performance.
 
-The initial modelling progression is:
+The modelling progression, carried out in Milestone 3, was:
 
-**Persistence baseline → Linear Regression → XGBoost → PyTorch GRU/LSTM (Optional)**
+**Persistence baseline (with two further naive baselines) → Ridge regression → XGBoost → PyTorch GRU**
 
 This allows simple, interpretable, nonlinear tabular, and explicit sequence-based approaches to be compared.
 
@@ -33,7 +33,7 @@ This allows simple, interpretable, nonlinear tabular, and explicit sequence-base
 
 ## Quick start and status
 
-Milestone 1 (storage, versioning, preprocessing, splits) and Milestone 2 (data understanding, EDA, pipeline implementation) are implemented in `src/`. The Milestone 2 report is `docs/M2.md`. From an empty clone, once Python is installed, a virtual environment is created and activated (`python -m venv .venv`, then `source .venv/Scripts/activate` in bash on Windows, `.\.venv\Scripts\Activate.ps1` in PowerShell, or `source .venv/bin/activate` on macOS and Linux) and the packages are installed (`pip install -r requirements.txt`; the Setup Guide at the end has PowerShell and bash commands for every step), the whole project runs as:
+Milestone 1 (storage, versioning, preprocessing, splits) and Milestone 2 (data understanding, EDA, pipeline implementation) are implemented in `src/`. The Milestone 2 report is `docs/M2.md`. Milestone 3 (model selection, hyperparameter optimisation, experiment tracking and a compute benchmark) adds the model scripts, `configs/`, the `Dockerfile` and the report `docs/M3.md`, with the model card `docs/MODEL_CARD.md`; its results, commands and files are in the Milestone 3 section below and in Step 10 of the Setup Guide. From an empty clone, once Python is installed, a virtual environment is created and activated (`python -m venv .venv`, then `source .venv/Scripts/activate` in bash on Windows, `.\.venv\Scripts\Activate.ps1` in PowerShell, or `source .venv/bin/activate` on macOS and Linux) and the packages are installed (`pip install -r requirements.txt`; the Setup Guide at the end has PowerShell and bash commands for every step), the whole project runs as:
 
 ```
 python src/download_ukair.py
@@ -1784,7 +1784,9 @@ The development, test and held-out sets are identical; only the training set (35
 
 **Decisions confirmed unchanged, and why.** The 3-hour windows on the UTC clock, the 6-hour target and the split years and held-out cities stay because nothing in the evidence argued against them. Google Cloud Storage stays the only store: the whole 3-hour table has about 319,000 rows and is analysed with pandas in seconds, so BigQuery would add set-up without adding capability. `validate_data_quality.py` still only reports and was not extended with the analysis checks, because validation (does the data meet the contract?) and analysis (what should we decide?) are different jobs, and a validator that also analyses grows into a second analysis script.
 
-## Next steps and evaluation approach (Milestone 3)
+## Next steps and evaluation approach (the Milestone 3 plan, as written in Milestone 2)
+
+The outcome of this plan is in the Milestone 3 section below and in `docs/M3.md`.
 
 The steps are ordered by priority: **core** steps answer the research questions, the others are done if the core is complete.
 
@@ -2107,6 +2109,92 @@ These questions were left open in Milestone 1. Each was answered from training a
 
 ---
 
+# Questions Left Open in Milestone 2 and How Milestone 3 Answered Them
+
+Each answer was reached on the training years and the development year (2024) only; the 2025 test split and the held-out cities were used once, in the final evaluation. Details and evidence are in `docs/M3.md`.
+
+| # | Question left open | Answer in Milestone 3 |
+|---|---|---|
+| 2 | Which rolling-window length? | The 8-block (24-hour) window stays: 16 and 24 blocks gave no gain (`check_window_length.py`, experiment E4d) |
+| 2 | Is a "same block yesterday" feature worth adding? | No: no fold reached the 1% adoption threshold for it (E4a) |
+| 6 | Do latitude, longitude and country help? | No variant was adopted in the leave-one-city-out comparison; excluding Cork UCC changes the pooled differences by at most about 0.4 percentage points (E8) |
+| 7 | What sequence length for the PyTorch model? | 8 blocks (24 hours), the same history as the rolling window |
+| 8 | XGBoost hyperparameters? | Searched with random search and TPE over 780 configurations in three rounds (E7, E7b, E7c); the configuration with the lowest selection-fold error was chosen without looking at 2024; the gain over the starting values is about 0.3% |
+| 9 | XGBoost against Linear Regression? | XGBoost is 9.3% better on the development year (MAE 3.147 against 3.471 for Ridge) |
+| 10 | Does PyTorch add value? | Not on the development year: the tuned GRU is 1.3% worse (3.187) and takes three to four times as long to fit on a CPU; on the unseen cities it equals the XGBoost model within seed noise |
+| | Does Cork need separate treatment? | No: the main results hold with and without it |
+| | The Irish timestamp convention | Not tested (the reason is in section 10 of `docs/M3.md`) |
+
+---
+
+# Milestone 3: Model Selection, Optimisation and MLOps
+
+The Milestone 3 report is `docs/M3.md`. Its companions are the model card (`docs/MODEL_CARD.md`), the profile of the GRU's training step (`docs/PROFILING_REPORT.md`), the record of every hyperparameter value and range with its justification (`docs/HYPERPARAMETER_HISTORY.md`) and the exact cloud session (`docs/GCP_RUNBOOK.md`).
+
+## Result in brief
+
+The selected model is the **tuned XGBoost regressor** (absolute-error objective; feature set A: the current block, three lags, the 8-block rolling mean and standard deviation, and the sine and cosine of the local hour and month; no place inputs), saved as `models/xgboost/v3`. It was compared with three naive baselines, Ridge regression, the starting-values XGBoost and a tuned GRU.
+
+| Model | 2024 development MAE | 2025 test MAE | Held-out cities MAE |
+|---|---|---|---|
+| Persistence (the current block) | 3.869 | 3.699 | 3.480 |
+| Ridge, alpha = 1 | 3.471 | 3.351 | 3.337 |
+| XGBoost, starting values | 3.152 | 3.043 | 3.087 |
+| **XGBoost, tuned (selected)** | **3.147** | **3.038** | **3.069** |
+| GRU, tuned (mean of three seeds) | 3.187 | 3.072 | 3.060 |
+
+On the 2025 test split (25,944 rows at 11 stations) the selected model has a skill of 0.179 against persistence and beats it at every station; on Derry, London and Paris, cities it never saw (13,362 rows at 5 stations), the skill is 0.118 and it beats persistence at all five stations. The GRU is slightly better than the selected model on the held-out cities (0.3%), which is inside the spread between its own seeds, and the freeze rule meant that no reference model could change the choice. The weaknesses (under-prediction of the highest concentrations, winter and evening errors) are analysed in section 9 of `docs/M3.md`.
+
+## How the models were compared
+
+- **Evidence rule.** A feature, target, loss or model-structure variant is adopted only if its seen-station MAE improves by at least 1% in at least 2 of the 3 selection folds (validation years 2021, 2022 and 2023, each trained on the earlier years only) and the 2024 MAE is not worse. Hyperparameters are chosen on the selection folds alone.
+- **Experiments** (each is a configuration file in `configs/`, listed in section 7 of `docs/M3.md`): baselines, Ridge and XGBoost on feature set A, target form, standardisation, time encoding, window length, early stopping, loss function, the place ablation, hyperparameter searches for XGBoost, Ridge and the GRU, and a seed-noise check.
+- **Final evaluation.** `final_evaluation.py` refuses to run without `--confirm-freeze`, scores each frozen model folder once, and is the only script allowed to read the 2025 test rows and the held-out cities. After it, `error_analysis.py --final` reports where the selected model fails.
+
+## Experiment tracking (MLOps)
+
+Every experiment is tracked in MLflow 3.18 with a local SQLite store (`mlruns/mlflow.db`, not committed): 954 runs in 17 experiments. A run logs its configuration and its hash, its metrics, its per-station tables, the git commit (with a `-dirty` flag), the SHA-256 hashes of the data, the dataset run ID, the library versions, the machine, the environment (`laptop`, `gcp-cpu-vm` or `gcp-gpu-vm`) and, in a container, the image digest. The runs are exported as tables (`reports/m3/run_summary.csv`, `reports/m3/hpo_trials.csv`). View them with:
+
+```bash
+mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db
+```
+
+then open http://127.0.0.1:5000 and choose "Model training". Screenshots of the tracking server are in section 4 of `docs/M3.md`.
+
+## Compute
+
+The experiments ran on a development laptop (Intel i7-8565U, 4 physical cores). The compute comparison (`benchmark.py`) also ran on a Google Cloud CPU VM (`n1-standard-8`, 4 physical cores) and a GPU VM (the same machine with one NVIDIA T4), in the project's Docker images (`Dockerfile`: a CPU image by default, and a GPU image with `--build-arg TORCH_INDEX=https://pypi.org/simple`). The tuned XGBoost model fits in about 22 s on the CPU VM and 7 s on the T4; the tuned GRU takes 49.9 s for 10 epochs on the CPU VM and 13.8 s on the T4. The report concludes that a CPU machine is enough for the selected model (the GPU saves 15 seconds per fit and gives no gain in accuracy) and that the GPU pays off only for the GRU; obtaining the T4 took about four hours of refused requests, which counts against it (section 6 of `docs/M3.md`). The cost figures there are estimates at assumed list prices. `docs/GCP_RUNBOOK.md` gives the exact session, including the settings of both machines and the reasons for them.
+
+## Scripts and files added in Milestone 3
+
+| Path | Purpose |
+|---|---|
+| `src/train.py`, `src/train_gru.py` | Train and score one configuration (`--save-model` writes `models/<model>/v<N>/`) |
+| `src/tune_xgboost.py`, `src/tune_ridge.py`, `src/tune_gru.py` | Hyperparameter searches (Optuna: random search and TPE) and the GRU search |
+| `src/check_windows.py`, `src/check_window_length.py` | Window checks that stop a run on any inconsistency, and the window-length comparison |
+| `src/final_evaluation.py`, `src/error_analysis.py` | The one-time final evaluation and the error analysis (development year, or `--final`) |
+| `src/benchmark.py`, `src/profile_gru.py` | The compute benchmark (threads, CPU against GPU) and the profile of the GRU's training step |
+| `src/export_runs.py`, `src/plot_results.py`, `src/store_models.py` | Export the tracked runs, draw the report's figures, and upload a frozen model folder to the bucket (`models/`) |
+| `src/m3_data.py`, `src/m3_tracking.py` | The folds and the leakage guard, and the MLflow set-up and lineage tags |
+| `configs/` | One configuration file per experiment, named for what it does |
+| `models/` | The saved model folders (model file, `config.yaml`, `metrics.json`, `metadata.json`) |
+| `reports/m3/`, `reports/final/`, `reports/figures/` | The tables and figures of the experiments, the final evaluation, and the report |
+| `Dockerfile`, `.dockerignore` | The CPU and GPU images |
+| `docs/` | `M3.md`, `MODEL_CARD.md`, `PROFILING_REPORT.md`, `HYPERPARAMETER_HISTORY.md`, `GCP_RUNBOOK.md` |
+
+## Reproducing the selected model
+
+With the environment and the processed data in place (Setup Guide, Steps 4 to 8, or the bucket's `processed/` folder; `docs/GCP_RUNBOOK.md`, step 7 lists the files and their SHA-256 hashes), the tuned model is rebuilt with:
+
+```bash
+export DATASET_RUN_ID=20261019T213934Z          # PowerShell: $env:DATASET_RUN_ID = "20261019T213934Z"
+python src/train.py --config configs/xgboost_tuned_v1.yaml --save-model
+```
+
+Expected: selection-fold MAE 3.3393 and 2024 MAE 3.1466 on the same operating system (within 0.005 and 0.003 on another one; the container on Linux gave 3.3409 and 3.1452). Reproducibility here means a tolerance, not bit-identical results: the tuned configuration samples rows and columns, so results can differ slightly between operating systems and between CPU and GPU. Section 7 of `docs/M3.md` has the full instructions, the table of configuration files by experiment, and the clean-run test on three machines.
+
+---
+
 # AI Acknowledgement
 
 **AI use.** Generative AI tools were used in this project. I am responsible for every claim, line of code and result in this submission.
@@ -2139,6 +2227,28 @@ These questions were left open in Milestone 1. Each was answered from training a
 - I reviewed proposed changes before they were applied and corrected or removed AI suggestions that were wrong or unsupported by the data.
 - No confidential, personal or restricted data was uploaded to an AI service; the data are public monitoring data.
 
+
+## Milestone 3
+
+Generative AI tools were used in this milestone. I am responsible for every claim, line of code and result in this submission.
+
+**Tools and purpose.**
+- **Claude** (Sonnet 5.5) was my coding and writing assistant. From my decisions it wrote and ran the experiment scripts and configuration files, kept the MLflow tracking, ran the experiments on my laptop, analysed their outputs, and drafted the Milestone 3 report (`docs/M3.md`), the model card, the hyperparameter history, the profiling report and the cloud runbook.
+- **ChatGPT** and other AI models were consulted before any code was written, to discuss the design choices of this milestone and to review recommendations. I continuously prompted various models on suggestions from different models to ensure as many potential problems and counter points were addressed as possible. I weighed what they suggested against the lectures, the labs and the marking rubric, and decided myself.
+
+**Who decided what.**
+- **The design and the decisions were mine.** I fixed the models to compare (the baselines, Ridge, XGBoost and a GRU) and the evaluation design: three selection folds inside the training years, 2024 as the development year, and the 2025 test split and the held-out cities left untouched until one final evaluation. I decided the compute plan (the laptop, a CPU virtual machine and a GPU virtual machine) and its cost controls, what counted as evidence, and when to freeze.
+- **Specific decisions.** I chose the tuned XGBoost as the primary model and froze the state on 15 November; I kept the GRU batch size at 256 (XGBoost is the stronger model, so a small saving on the GRU did not justify changing it) and the XGBoost round cap at 4,000; I cancelled the experiment with place inputs in a second form because of the risk of leakage and the little benefit it promised; I decided not to add weather or other pollutants, for the reasons in section 10 of `docs/M3.md`; and I declared the GRU seeds, Ridge and the starting-values XGBoost as reference models that cannot change the choice of the primary model.
+- **The AI worked out the "how".** Claude proposed the code, the structure of the experiments, and the search ranges and values of the hyperparameter searches. I reviewed the record of every change and its justification (`docs/HYPERPARAMETER_HISTORY.md`), questioned it, and held back the freeze until I was satisfied with it. I checked every line of code to ensure it was readable and comprehensible.
+- **The cloud work was done from my own accounts and terminal.** I requested the quotas, set the budget alert (alerts only, not a spending cap), created and deleted both virtual machines, and ran the commands on them, including the search for a zone with a free GPU. Claude supplied the command sequences and diagnosed the errors from the output I pasted back; its access to my cloud project was limited to a few read-only queries that I allowed (listing quotas, buckets and machines), and it created, changed and deleted nothing. I took the MLflow and Perfetto screenshots myself.
+- **Working rules I set.** The AI was not allowed to commit or push, or to add files and tools I had not approved; it had to propose changes and show evidence before implementing them; and no choice of features, loss, hyperparameters, rounds or model could use the 2025 test split or the held-out cities. The final-evaluation script refuses to run without a freeze confirmation and scores each model folder once.
+
+**How the output was checked or changed.**
+- Every number in `docs/M3.md` comes from a logged MLflow run or an exported table (`reports/`), and each run records its commit, the SHA-256 hashes of the data, the library versions and the machine.
+- The tuned XGBoost model was reproduced on three machines (natively on the laptop, in the container on the laptop, and from a fresh clone on a cloud virtual machine), with the scores and tolerances reported in section 7 of `docs/M3.md`.
+- The code was linted with `pyflakes` and every experiment was run end to end on the real data.
+- **Where the AI was wrong or I changed its output.** The profiling script stopped on a GPU (the profiler lists each phase twice there); the fix is in the repository and described in section 6.3 of `docs/M3.md`. A first figure of the GPU profile had clipped labels and was redrawn. Its guidance on the cloud console and on prices was out of date in places, and I corrected it against the live pages and the billing line items. A reproduction time was first quoted for one fit when it was the total of four, and was corrected. A long first draft of the virtual-machine guide was cut down at my request, and I removed or reworded statements in the report that I did not think were supported, for example about the other pollutants. I also stopped the freeze until every hyperparameter change had a recorded justification.
+
 ---
 
 # Setup Guide:
@@ -2149,7 +2259,7 @@ This guide takes you from a fresh computer to a finished run of the pipeline, wi
 
 ### All the steps at a glance
 
-Every script in `src/` that you run, in the order you run it. The numbered Steps below explain how to set up and run each group: scripts 1 to 4 in Step 4, scripts 5 to 12 in Step 7, scripts 13 to 24 in Step 9.
+Every script in `src/` that you run, in the order you run it. The numbered Steps below explain how to set up and run each group: scripts 1 to 4 in Step 4, scripts 5 to 12 in Step 7, scripts 13 to 24 in Step 9, and the Milestone 3 scripts (the last row) in Step 10.
 
 | # | Script | What it does | Writes | Needs the cloud |
 |---|---|---|---|---|
@@ -2177,14 +2287,17 @@ Every script in `src/` that you run, in the order you run it. The numbered Steps
 | 22 | `eda_autocorrelation.py` | Figure 5: autocorrelation at the forecast horizon | `reports/figures/`, `reports/eda/autocorrelation/` | no |
 | 23 | `eda_station_differences.py` | Figure 6: differences between stations | `reports/figures/`, `reports/eda/station_differences/` | no |
 | 24 | `eda_dev_drift.py` | Figure 7: is the development year like the training years? | `reports/figures/`, `reports/eda/dev_drift/` | no |
+| 25 and later | The Milestone 3 scripts: `train.py`, `train_gru.py`, `tune_xgboost.py`, `tune_ridge.py`, `tune_gru.py`, `check_windows.py`, `check_window_length.py`, `benchmark.py`, `profile_gru.py`, `error_analysis.py`, `final_evaluation.py`, `export_runs.py`, `plot_results.py`, `store_models.py` | Model training, hyperparameter searches, the compute benchmark, the final evaluation, and the tracking exports (the table in the Milestone 3 section says what each does) | `models/`, `mlruns/`, `reports/m3/`, `reports/final/` | only `store_models.py` |
 
-Three more files in `src/` are never run on their own: other scripts import them. Together with the 24 scripts above, they are every file in `src/`, and each one is used.
+Five more files in `src/` are never run on their own: other scripts import them. Together with the scripts above, they are every file in `src/`, and each one is used.
 
 | File | What it provides | Used by |
 |---|---|---|
 | `config.py` | The folder paths (`raw_data/`, `processed_data/`, `reports/`, `metadata/`), the pipeline version, the git commit written into the manifests, and the check that the Google Cloud settings are set | Every script, directly or through `analysis_helpers.py` |
 | `stations.py` | Loads `metadata/station_reference.csv` (the one station table) and stops with a full list of problems if it is malformed | The four download scripts, `canonicalize_raw_data.py`, `validate_data_quality.py`, `create_splits.py`, `analysis_helpers.py` and the analysis scripts that need station details |
 | `analysis_helpers.py` | The shared code of scripts 13 to 24: the decision pool (the 12 non-held-out stations, 2018 to 2024), a rebuild of the feature table with the pipeline's own functions plus a check that it matches the pipeline's table, the report folders, and the figure style and colours | Scripts 13 to 24 (all twelve check, baseline and EDA scripts) |
+| `m3_data.py` | The Milestone 3 data layer: the three selection folds and the development fold, the leakage guard that stops a run if a training target reaches the validation period, and the only reader allowed to open the test and held-out rows | `train.py`, `train_gru.py`, the tuning scripts, `final_evaluation.py`, `error_analysis.py` |
+| `m3_tracking.py` | The MLflow set-up and the lineage tags written into every run (commit, data hashes, dataset run ID, library versions, machine, environment) | Every Milestone 3 script that logs a run |
 
 The input data file `metadata/station_reference.csv` (17 stations) is in the repository; `requirements.txt` lists the packages. Run the scripts in the order of the table: each one reads what the earlier ones wrote.
 
@@ -2395,6 +2508,30 @@ The commands are the same in PowerShell and bash. All twelve together take about
 - **check_training_coverage:** `Training stations: 12; cities: 9; countries: 5`. Output in `reports/training_coverage/`.
 - **baseline_persistence:** `rows 31,192; MAE 3.869 ug/m3; RMSE 7.993; mean target 9.07; MAE is 43% of the mean target`. Output in `reports/baseline/`.
 - **The six `eda_*.py` scripts:** each saves a figure (`01_missingness_heatmap.png` to `07_dev_year_drift.png` in `reports/figures/`, with `eda_seasonal_diurnal.py` saving two) and ends with a `FINDING`, a `DECISION` and a `LIMITATION` line, for example `5 of 112 station-years are below 75% valid` from `eda_missingness.py`. Their tables are in `reports/eda/<topic>/`.
+
+### Step 10: Run the Milestone 3 experiments (optional)
+
+These steps need the processed data of Steps 7 and 8 (or the bucket's `processed/` files), the packages of Step 4, and no cloud credentials. Set the dataset run ID first, so that each tracked run links to the dataset it used:
+
+```bash
+export DATASET_RUN_ID=20261019T213934Z          # PowerShell: $env:DATASET_RUN_ID = "20261019T213934Z"
+```
+
+Rebuild the selected model (about 6 minutes on a laptop; expected selection-fold MAE 3.3393 and 2024 MAE 3.1466):
+
+```bash
+python src/train.py --config configs/xgboost_tuned_v1.yaml --save-model
+```
+
+Look at the tracked runs:
+
+```bash
+mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db
+```
+
+The other experiments follow the same pattern, one configuration file each (`python src/train.py --config configs/<experiment>.yaml`; the searches are `python src/tune_xgboost.py --config configs/hpo_random_vs_tpe.yaml`, `python src/tune_ridge.py --config configs/hpo_ridge_alpha.yaml` and `python src/tune_gru.py --config configs/hpo_gru.yaml`, and take a long time), and `docs/M3.md` section 7 lists the file of every experiment. The compute benchmark and the profile are `python src/benchmark.py --config configs/compute_benchmark.yaml` and `python src/profile_gru.py --config configs/profile_gru.yaml --device cpu`. In a container, build the CPU image with `docker build -t pm25-m3:cpu --build-arg GIT_COMMIT=$(git rev-parse HEAD) .` and run a script with `docker run --rm -v "$PWD/processed_data:/app/processed_data:ro" -v "$PWD/mlruns:/app/mlruns" -v "$PWD/reports:/app/reports" pm25-m3:cpu src/train.py --config configs/reproduce_xgboost_tuned_cpu.yaml`.
+
+Do **not** run `final_evaluation.py` or `error_analysis.py --final` while experimenting: they read the 2025 test rows and the held-out cities, run once per model folder, and refuse without `--confirm-freeze`. The cloud benchmark, step by step, is in `docs/GCP_RUNBOOK.md`.
 
 ### If something fails
 

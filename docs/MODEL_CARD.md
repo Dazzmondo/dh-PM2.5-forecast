@@ -2,14 +2,9 @@
 
 **Project:** Six-Hour Urban PM2.5 Forecasting Across Ireland and Europe
 **Repository:** https://github.com/Dazzmondo/dh-PM2.5-forecast
-**Author and contact:** [Insert: name]
+**Author:** the student who made this Milestone 3 submission (identified by the submission itself)
 
-> Drafting conventions (delete this block before the file is final): every `[Insert: ...]` is a result or a fact that must come from a
-> logged MLflow run, a model folder or a manifest (name the source). Everything else states only facts already verified in the
-> repository or in the Milestone 2 evidence. No slot may be left in the final file, and no number may be typed in that is not in the
-> exported run tables (`reports/m3/run_summary.csv`) or the final evaluation table (`reports/final/`).
-> The numbers in sections 1, 4, 5 and 7 describe the tuned model (XGBoost, E7c configuration, absolute-error objective,
-> `models/xgboost/v3`), which was frozen on 2026-11-15.
+**Scope of the numbers.** The numbers in sections 1, 4, 5 and 7 describe the tuned model (XGBoost, E7c configuration, absolute-error objective, `models/xgboost/v3`), which was frozen on 2026-11-15.
 
 ---
 
@@ -17,7 +12,7 @@
 
 | Field | Content |
 |---|---|
-| Model | XGBoost regressor, absolute-error objective; PM2.5 history and time features only, no place inputs; folder `models/xgboost/v3/` (the folder number counts every saved XGBoost model; `v1` is the earlier squared-error model and `v2` the starting-values model) and [Insert: the same path in the bucket, `models/xgboost/v3/`, once uploaded] |
+| Model | XGBoost regressor, absolute-error objective; PM2.5 history and time features only, no place inputs; folder `models/xgboost/v3/` (the folder number counts every saved XGBoost model; `v1` is the earlier squared-error model and `v2` the starting-values model) and the same path, `models/xgboost/v3/`, in the project's Google Cloud Storage bucket (uploaded on 2026-11-24: four files, 22,248,138 bytes, with its record in `manifests/model_versions.jsonl`, which names the dataset run, the raw-data version, the scaler hash, the MLflow run and the commit) |
 | Type | Gradient-boosted decision trees (XGBoost 3.4.1, histogram tree method). Why: it handles non-linear structure and interactions in tabular inputs without scaling, was 9.3% better than ridge regression on the development year (MAE 3.147 against 3.471), and was 1.3% better and about three to four times cheaper to fit than the tuned GRU (114 s against 316–492 s for the 2024 fit on the same laptop) (sections 2, 3.2 and 5 of `docs/M3.md`) |
 | Task | Regression: the mean PM2.5 concentration (µg/m³) of the 3-hour block that starts six hours after the current block, for one monitoring station |
 | Forecast origin | A fixed 3-hour UTC block that has just finished; the forecast is for the block two blocks later (target = block t+2) |
@@ -97,8 +92,8 @@ All numbers come from logged runs (`reports/m3/run_summary.csv`, `reports/final/
 |---|---|---|---|---|---|---|
 | Selection folds (mean of 3, seen-station rows) | 14,825 / 15,260 / 31,377 | 3.339 | 6.070 | 4.131 | 0.192 | n/a |
 | Development year 2024 | 31,192 | 3.147 | 6.263 | 3.869 | 0.187 | 12 / 12 |
-| 2025 test split | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] |
-| Held-out cities (never seen) | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] | [Insert] |
+| 2025 test split | 25,944 | 3.038 | 5.462 | 3.699 | 0.179 | 11 / 11 |
+| Held-out cities (never seen) | 13,362 | 3.069 | 5.057 | 3.480 | 0.118 | 5 / 5 |
 
 Development year, per station (`reports/m3/error_analysis/xgboost_v3_dev/by_station.csv`):
 
@@ -118,7 +113,33 @@ Development year, per station (`reports/m3/error_analysis/xgboost_v3_dev/by_stat
 | IE009GY | Galway | 2,333 | 2.759 | 4.805 | −0.267 | 3.374 | 0.182 |
 
 Without Cork UCC (28,540 rows): MAE 3.189, persistence 3.913, skill 0.185.
-[Insert: the same two tables for the 2025 test split and the held-out result per city (Derry, London, Paris) with its row count, with and without Cork UCC. State Copenhagen (no valid 2025 hours) and Kilmainham (225 valid 2025 rows) in the row counts.]
+2025 test split, per station (`reports/m3/error_analysis/xgboost_v3_final/by_station.csv`; Copenhagen has no valid 2025 hours and so no rows, and Kilmainham, `IE005AP`, has 225):
+
+| Station | City | Rows | MAE | RMSE | Bias | Persistence MAE | Skill |
+|---|---|---|---|---|---|---|---|
+| ES0118A | Madrid | 2,439 | 3.406 | 4.933 | −0.414 | 4.117 | 0.173 |
+| ES1525A | Madrid | 2,289 | 3.044 | 4.846 | −0.159 | 3.436 | 0.114 |
+| GB0567A | Belfast | 2,793 | 2.630 | 4.091 | −0.290 | 2.944 | 0.107 |
+| GR0003A | Athens | 2,295 | 3.714 | 6.265 | −0.438 | 4.671 | 0.205 |
+| GR0039A | Athens | 2,776 | 2.331 | 3.567 | 0.130 | 2.763 | 0.156 |
+| IE0028A | Dublin | 2,446 | 3.289 | 5.949 | −0.752 | 4.150 | 0.208 |
+| IE004BP | Cork | 2,599 | 3.076 | 6.325 | −0.389 | 3.892 | 0.210 |
+| IE005AP | Dublin | 225 | 4.505 | 7.471 | −1.281 | 5.697 | 0.209 |
+| IE005CP | Waterford | 2,574 | 3.738 | 7.614 | −1.007 | 4.634 | 0.193 |
+| IE007CP | Limerick | 2,784 | 2.873 | 5.997 | −0.535 | 3.721 | 0.228 |
+| IE009GY | Galway | 2,724 | 2.398 | 3.656 | −0.077 | 2.790 | 0.141 |
+
+Without Cork UCC (23,345 test rows): MAE 3.034, persistence 3.677, skill 0.175. Held-out cities, per station (they contain no Cork station):
+
+| Station | City | Rows | MAE | RMSE | Bias | Persistence MAE | Skill |
+|---|---|---|---|---|---|---|---|
+| FR04002 | Paris | 2,304 | 3.456 | 5.997 | −0.734 | 3.788 | 0.088 |
+| FR04058 | Paris | 2,734 | 3.689 | 5.471 | −1.007 | 4.255 | 0.133 |
+| GB0566A | London | 2,892 | 2.620 | 4.282 | −0.433 | 2.738 | 0.043 |
+| GB0620A | London | 2,880 | 2.855 | 4.779 | −0.497 | 2.927 | 0.025 |
+| GB1060A | Derry | 2,552 | 2.804 | 4.776 | −0.368 | 3.836 | 0.269 |
+
+Per held-out city: Derry 2,552 rows, MAE 2.804, skill 0.269; London 5,772 rows, MAE 2.737, skill 0.034; Paris 5,038 rows, MAE 3.582, skill 0.114.
 
 ## 8. Limitations and weaknesses
 
@@ -139,7 +160,7 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
 - **Unseen places.** In the place ablation (leave-one-city-out, 2023, ridge and XGBoost), latitude, longitude and country as inputs
   did not improve the pooled error (−0.6% to +1.9%, none adopted); they improved the five Irish cities a little (1.6–2.4% on average)
   and not the four cities that are alone in their country, and "all three" was much worse for ridge (Belfast +106%). The gap between
-  the development cities and the held-out cities is [Insert: from the final evaluation].
+  the seen stations and the held-out cities on the same year is small in error (MAE 3.038 against 3.069) and larger in skill (0.179 against 0.118), because the held-out cities' persistence error is lower (3.480; London 2.832, skill 0.034).
 - **Data limitations.** One sensor and one data source per station, so errors cannot be separated from instrument effects. The Irish
   data are provisional and unvalidated, start only in 2022 and cover two training years. The hour convention of the Irish files is
   inferred, and the one-hour alternative was not tested (`docs/M3.md`, section 10). Cork UCC has many negative readings (about 19% of
@@ -148,7 +169,7 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
   through Belfast.
 - **Temporal change.** Skill is lower on 2024 (0.185) than on the training years the model was fitted on (0.25–0.30, in-sample),
   mainly because persistence is a stronger baseline in 2024 (MAE 3.869, the lowest of any year); the model's MAE is similar (3.15 in 2024,
-  2.88–3.22 in the training years). The result for 2025 is [Insert: its result]. This is described as a performance change; whether it is
+  2.88–3.22 in the training years). The 2025 test split gives an MAE of 3.038 and a skill of 0.179 (persistence 3.699, lower than in 2024), so the absolute error did not rise and the skill is close to 2024's. This is described as a performance change; whether it is
   drift is not established.
 - **Design limits.** An 8-block (24-hour) history and no weather inputs; point forecasts only; the final model was not refitted on 2024.
 - **Statistical limits.** Three seeds indicate variability and do not prove significance; the 1% adoption threshold is a heuristic.
@@ -160,7 +181,7 @@ Each statement below is tied to evidence in `docs/M3.md` (section 9, error analy
   course use, why persistence is always shown beside it, and why section 8 states where it fails.
 - Skill differs between cities and countries (the evidence is limited by the small number of stations and the short Irish record), so
   results for one place should not be assumed for another.
-- Compute used for the experiments: the experiments so far were run on a personal laptop, at no cloud cost, to protect the cloud credits; the CPU VM session on Google Cloud lasted 1 hour 14 minutes, about 0.60 at an assumed list price of 0.49 per hour (an estimate in US dollars, not the billed charge); the GPU VM session lasted about 1 hour 2 minutes, about 0.93 at an assumed 0.9 per hour (an estimate); [Insert: the billed charges of both sessions].
+- Compute used for the experiments: the experiments were run on a personal laptop, at no cloud cost, to protect the cloud credits, and the compute comparison also ran on two Google Cloud virtual machines; the CPU VM session on Google Cloud lasted 1 hour 14 minutes, about 0.60 at an assumed list price of 0.49 per hour (an estimate in US dollars, not the billed charge); the GPU VM session lasted about 1 hour 2 minutes, about 0.93 at an assumed 0.9 per hour (an estimate), after about four hours of refused requests before a T4 was available; training and prediction of this model need only a CPU (the GPU saved 15 seconds per fit and gave no gain in accuracy); [Insert: the billed charges of both sessions].
 
 ## 10. Caveats and recommendations
 

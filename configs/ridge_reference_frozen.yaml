@@ -1,0 +1,14 @@
+# The frozen Ridge reference model for the final evaluation (docs/M3.md section 5.3): the same settings as ridge_feature_set_a.yaml
+# (feature set A, standardised inside each fold, absolute target, alpha 1.0; nothing is chosen here), saved as models/ridge/v<N> so that
+# final_evaluation.py can score it. Its run is logged in m3_candidates, with the other saved models.
+experiment: m3_candidates
+run_name: ridge_reference_frozen
+model: ridge
+settings: [F, D]
+feature_set: A
+time_features: cyclical
+target: absolute
+scaling: standard
+seed: 0
+params:
+  alpha: 1.0
