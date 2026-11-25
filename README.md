@@ -2129,7 +2129,7 @@ Each answer was reached on the training years and the development year (2024) on
 
 # Milestone 3: Model Selection, Optimisation and MLOps
 
-The Milestone 3 report is `docs/M3.md`. Its companions are the model card (`docs/MODEL_CARD.md`), the profile of the GRU's training step (`docs/PROFILING_REPORT.md`), the record of every hyperparameter value and range with its justification (`docs/HYPERPARAMETER_HISTORY.md`) and the exact cloud session (`docs/GCP_RUNBOOK.md`).
+The Milestone 3 report is `docs/M3.md`. Its companions are the model card (`docs/MODEL_CARD.md`), the profile of the selected XGBoost model's training (`docs/PROFILING_REPORT.md`), the record of every hyperparameter value and range with its justification (`docs/HYPERPARAMETER_HISTORY.md`) and the exact cloud session (`docs/GCP_RUNBOOK.md`).
 
 ## Result in brief
 
@@ -2165,6 +2165,8 @@ then open http://127.0.0.1:5000 and choose "Model training". Screenshots of the 
 
 The experiments ran on a development laptop (Intel i7-8565U, 4 physical cores). The compute comparison (`benchmark.py`) also ran on a Google Cloud CPU VM (`n1-standard-8`, 4 physical cores) and a GPU VM (the same machine with one NVIDIA T4), in the project's Docker images (`Dockerfile`: a CPU image by default, and a GPU image with `--build-arg TORCH_INDEX=https://pypi.org/simple`). On the GPU VM the tuned XGBoost model fits in 16.3 s on its CPU and 7.1 s on its T4 (22 s on the CPU VM at 8 threads), and the tuned GRU takes 51.3 s for 10 epochs on its CPU and 13.8 s on the T4. The report concludes that a CPU machine is enough for the selected model (the GPU saves about 9 seconds per fit and gives no gain in accuracy) and that the GPU pays off only for the GRU; obtaining the T4 took about four hours of refused requests, which counts against it (section 6 of `docs/M3.md`). The cost figures there are estimates at assumed list prices; the billed total of the two cloud sessions was $1.45 (section 6.3). `docs/GCP_RUNBOOK.md` gives the exact session, including the settings of both machines and the reasons for them.
 
+A profile of the selected model's training with XGBoost's own timers (`docs/PROFILING_REPORT.md`) found that, on the laptop at 8 threads, about half of the 42.3 s fit is spent outside tree building and does not speed up with more threads; histogram building and row movement are the main timed costs.
+
 ## Scripts and files added in Milestone 3
 
 | Path | Purpose |
@@ -2173,7 +2175,7 @@ The experiments ran on a development laptop (Intel i7-8565U, 4 physical cores). 
 | `src/tune_xgboost.py`, `src/tune_ridge.py`, `src/tune_gru.py` | Hyperparameter searches (Optuna: random search and TPE) and the GRU search |
 | `src/check_windows.py`, `src/check_window_length.py` | Window checks that stop a run on any inconsistency, and the window-length comparison |
 | `src/final_evaluation.py`, `src/error_analysis.py` | The one-time final evaluation and the error analysis (development year, or `--final`) |
-| `src/benchmark.py`, `src/profile_gru.py` | The compute benchmark (threads, CPU against GPU) and the profile of the GRU's training step |
+| `src/benchmark.py`, `src/profile_xgboost.py`, `src/profile_gru.py` | The compute benchmark (threads, CPU against GPU), the profile of the selected XGBoost model's training and the profile of the GRU's training step |
 | `src/export_runs.py`, `src/plot_results.py`, `src/store_models.py` | Export the tracked runs, draw the report's figures, and upload a frozen model folder to the bucket (`models/`) |
 | `src/m3_data.py`, `src/m3_tracking.py` | The folds and the leakage guard, and the MLflow set-up and lineage tags |
 | `configs/` | One configuration file per experiment, named for what it does |
@@ -2287,7 +2289,7 @@ Every script in `src/` that you run, in the order you run it. The numbered Steps
 | 22 | `eda_autocorrelation.py` | Figure 5: autocorrelation at the forecast horizon | `reports/figures/`, `reports/eda/autocorrelation/` | no |
 | 23 | `eda_station_differences.py` | Figure 6: differences between stations | `reports/figures/`, `reports/eda/station_differences/` | no |
 | 24 | `eda_dev_drift.py` | Figure 7: is the development year like the training years? | `reports/figures/`, `reports/eda/dev_drift/` | no |
-| 25 and later | The Milestone 3 scripts: `train.py`, `train_gru.py`, `tune_xgboost.py`, `tune_ridge.py`, `tune_gru.py`, `check_windows.py`, `check_window_length.py`, `benchmark.py`, `profile_gru.py`, `error_analysis.py`, `final_evaluation.py`, `export_runs.py`, `plot_results.py`, `store_models.py` | Model training, hyperparameter searches, the compute benchmark, the final evaluation, and the tracking exports (the table in the Milestone 3 section says what each does) | `models/`, `mlruns/`, `reports/m3/`, `reports/final/` | only `store_models.py` |
+| 25 and later | The Milestone 3 scripts: `train.py`, `train_gru.py`, `tune_xgboost.py`, `tune_ridge.py`, `tune_gru.py`, `check_windows.py`, `check_window_length.py`, `benchmark.py`, `profile_xgboost.py`, `profile_gru.py`, `error_analysis.py`, `final_evaluation.py`, `export_runs.py`, `plot_results.py`, `store_models.py` | Model training, hyperparameter searches, the compute benchmark, the final evaluation, and the tracking exports (the table in the Milestone 3 section says what each does) | `models/`, `mlruns/`, `reports/m3/`, `reports/final/` | only `store_models.py` |
 
 Five more files in `src/` are never run on their own: other scripts import them. Together with the scripts above, they are every file in `src/`, and each one is used.
 
@@ -2529,7 +2531,7 @@ Look at the tracked runs:
 mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db
 ```
 
-The other experiments follow the same pattern, one configuration file each (`python src/train.py --config configs/<experiment>.yaml`; the searches are `python src/tune_xgboost.py --config configs/hpo_random_vs_tpe.yaml`, `python src/tune_ridge.py --config configs/hpo_ridge_alpha.yaml` and `python src/tune_gru.py --config configs/hpo_gru.yaml`, and take a long time), and `docs/M3.md` section 7 lists the file of every experiment. The compute benchmark and the profile are `python src/benchmark.py --config configs/compute_benchmark.yaml` and `python src/profile_gru.py --config configs/profile_gru.yaml --device cpu`. In a container, build the CPU image with `docker build -t pm25-m3:cpu --build-arg GIT_COMMIT=$(git rev-parse HEAD) .` and run a script with `docker run --rm -v "$PWD/processed_data:/app/processed_data:ro" -v "$PWD/mlruns:/app/mlruns" -v "$PWD/reports:/app/reports" pm25-m3:cpu src/train.py --config configs/reproduce_xgboost_tuned_cpu.yaml`.
+The other experiments follow the same pattern, one configuration file each (`python src/train.py --config configs/<experiment>.yaml`; the searches are `python src/tune_xgboost.py --config configs/hpo_random_vs_tpe.yaml`, `python src/tune_ridge.py --config configs/hpo_ridge_alpha.yaml` and `python src/tune_gru.py --config configs/hpo_gru.yaml`, and take a long time), and `docs/M3.md` section 7 lists the file of every experiment. The compute benchmark and the two profiles are `python src/benchmark.py --config configs/compute_benchmark.yaml`, `python src/profile_xgboost.py` (the selected model; it needs a saved model folder, `--model-dir models/xgboost/v<N>`) and `python src/profile_gru.py --config configs/profile_gru.yaml --device cpu`. In a container, build the CPU image with `docker build -t pm25-m3:cpu --build-arg GIT_COMMIT=$(git rev-parse HEAD) .` and run a script with `docker run --rm -v "$PWD/processed_data:/app/processed_data:ro" -v "$PWD/mlruns:/app/mlruns" -v "$PWD/reports:/app/reports" pm25-m3:cpu src/train.py --config configs/reproduce_xgboost_tuned_cpu.yaml`.
 
 Do **not** run `final_evaluation.py` or `error_analysis.py --final` while experimenting: they read the 2025 test rows and the held-out cities, run once per model folder, and refuse without `--confirm-freeze`. The cloud benchmark, step by step, is in `docs/GCP_RUNBOOK.md`.
 

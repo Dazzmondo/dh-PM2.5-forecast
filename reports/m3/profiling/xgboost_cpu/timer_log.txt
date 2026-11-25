@@ -1,0 +1,314 @@
+===== all_threads, repeat 1 =====
+[00:43:40] ======== Monitor (0): HostSketchContainer ========
+[00:43:40] AllReduce: 0.001077s, 1 calls @ 1077us
+
+[00:43:40] MakeCuts: 0.001196s, 1 calls @ 1196us
+
+[00:43:40] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:43:40] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:44:18] ======== Monitor (0): GBTree ========
+[00:44:18] BoostNewTrees: 18.7172s, 3682 calls @ 18717207us
+
+[00:44:18] CommitModel: 0.003361s, 3682 calls @ 3361us
+
+[00:44:18] ======== Monitor (0): HistUpdater ========
+[00:44:18] BuildHistogram: 2.65525s, 18410 calls @ 2655249us
+
+[00:44:18] EvaluateSplits: 1.85828s, 22092 calls @ 1858284us
+
+[00:44:18] InitData: 0.231029s, 3682 calls @ 231029us
+
+[00:44:18] InitRoot: 2.0942s, 3682 calls @ 2094200us
+
+[00:44:18] LeafPartition: 2.73912s, 3682 calls @ 2739117us
+
+[00:44:18] UpdatePosition: 2.66178s, 22092 calls @ 2661780us
+
+[00:44:18] UpdateTree: 12.5228s, 3682 calls @ 12522786us
+
+[00:44:18] ======== Monitor (0):  ========
+[00:44:18] BuildHist: 3.74913s, 22092 calls @ 3749127us
+
+[00:44:18] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 8, "verbosity": 3, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4578454999718815, "fit_seconds": 37.70443330006674, "predict_seconds": 0.7203917999286205, "dev_mae": 3.1466175977894912}
+
+===== one_thread, repeat 1 =====
+[00:44:26] ======== Monitor (0): HostSketchContainer ========
+[00:44:26] AllReduce: 0.003043s, 1 calls @ 3043us
+
+[00:44:26] MakeCuts: 0.003139s, 1 calls @ 3139us
+
+[00:44:26] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:44:26] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:45:32] ======== Monitor (0): GBTree ========
+[00:45:32] BoostNewTrees: 49.1493s, 3682 calls @ 49149319us
+
+[00:45:32] CommitModel: 0.002581s, 3682 calls @ 2581us
+
+[00:45:32] ======== Monitor (0): HistUpdater ========
+[00:45:32] BuildHistogram: 5.73818s, 18410 calls @ 5738179us
+
+[00:45:32] EvaluateSplits: 3.4914s, 22092 calls @ 3491397us
+
+[00:45:32] InitData: 0.474656s, 3682 calls @ 474656us
+
+[00:45:32] InitRoot: 6.06806s, 3682 calls @ 6068060us
+
+[00:45:32] LeafPartition: 2.75769s, 3682 calls @ 2757693us
+
+[00:45:32] UpdatePosition: 6.97779s, 22092 calls @ 6977790us
+
+[00:45:32] UpdateTree: 25.675s, 3682 calls @ 25674962us
+
+[00:45:32] ======== Monitor (0):  ========
+[00:45:32] BuildHist: 11.0288s, 22092 calls @ 11028823us
+
+[00:45:32] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 1, "verbosity": 3, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4894727999344468, "fit_seconds": 66.20119579997845, "predict_seconds": 2.1653863000683486, "dev_mae": 3.145654634718835}
+
+===== all_threads_squared_error, repeat 1 =====
+[00:45:40] ======== Monitor (0): HostSketchContainer ========
+[00:45:40] AllReduce: 0.001071s, 1 calls @ 1071us
+
+[00:45:40] MakeCuts: 0.001185s, 1 calls @ 1185us
+
+[00:45:40] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:45:40] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:46:08] ======== Monitor (0): GBTree ========
+[00:46:08] BoostNewTrees: 19.4841s, 3682 calls @ 19484074us
+
+[00:46:08] CommitModel: 0.003106s, 3682 calls @ 3106us
+
+[00:46:08] ======== Monitor (0): HistUpdater ========
+[00:46:08] BuildHistogram: 2.19509s, 18410 calls @ 2195089us
+
+[00:46:08] EvaluateSplits: 1.91963s, 22092 calls @ 1919630us
+
+[00:46:08] InitData: 0.231481s, 3682 calls @ 231481us
+
+[00:46:08] InitRoot: 2.24485s, 3682 calls @ 2244852us
+
+[00:46:08] LeafPartition: 3.28849s, 3682 calls @ 3288492us
+
+[00:46:08] UpdatePosition: 2.45672s, 22092 calls @ 2456724us
+
+[00:46:08] UpdateTree: 12.6084s, 3682 calls @ 12608415us
+
+[00:46:08] ======== Monitor (0):  ========
+[00:46:08] BuildHist: 3.45761s, 22092 calls @ 3457605us
+
+[00:46:08] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 8, "verbosity": 3, "objective": "reg:squarederror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4486508001573384, "fit_seconds": 27.40106979990378, "predict_seconds": 0.6814397000707686, "dev_mae": 3.2599510483262657}
+
+===== all_threads_no_timers, repeat 1 =====
+RESULT {"threads": 8, "verbosity": 0, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.46548140002414584, "fit_seconds": 41.33454700000584, "predict_seconds": 0.7279999998863786, "dev_mae": 3.1466175977894912}
+
+===== all_threads, repeat 2 =====
+[00:47:04] ======== Monitor (0): HostSketchContainer ========
+[00:47:04] AllReduce: 0.001258s, 1 calls @ 1258us
+
+[00:47:04] MakeCuts: 0.001387s, 1 calls @ 1387us
+
+[00:47:04] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:47:04] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:47:46] ======== Monitor (0): GBTree ========
+[00:47:46] BoostNewTrees: 20.9316s, 3682 calls @ 20931649us
+
+[00:47:46] CommitModel: 0.003646s, 3682 calls @ 3646us
+
+[00:47:46] ======== Monitor (0): HistUpdater ========
+[00:47:46] BuildHistogram: 2.9797s, 18410 calls @ 2979701us
+
+[00:47:46] EvaluateSplits: 2.08826s, 22092 calls @ 2088256us
+
+[00:47:46] InitData: 0.24447s, 3682 calls @ 244470us
+
+[00:47:46] InitRoot: 2.31592s, 3682 calls @ 2315919us
+
+[00:47:46] LeafPartition: 3.0532s, 3682 calls @ 3053203us
+
+[00:47:46] UpdatePosition: 2.98957s, 22092 calls @ 2989570us
+
+[00:47:46] UpdateTree: 14.0216s, 3682 calls @ 14021592us
+
+[00:47:46] ======== Monitor (0):  ========
+[00:47:46] BuildHist: 4.16733s, 22092 calls @ 4167330us
+
+[00:47:46] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 8, "verbosity": 3, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.46937009994871914, "fit_seconds": 42.30602220003493, "predict_seconds": 0.7229945999570191, "dev_mae": 3.1466175977894912}
+
+===== one_thread, repeat 2 =====
+[00:47:54] ======== Monitor (0): HostSketchContainer ========
+[00:47:54] AllReduce: 0.002982s, 1 calls @ 2982us
+
+[00:47:54] MakeCuts: 0.003081s, 1 calls @ 3081us
+
+[00:47:54] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:47:54] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:49:04] ======== Monitor (0): GBTree ========
+[00:49:04] BoostNewTrees: 51.9934s, 3682 calls @ 51993382us
+
+[00:49:04] CommitModel: 0.003177s, 3682 calls @ 3177us
+
+[00:49:04] ======== Monitor (0): HistUpdater ========
+[00:49:04] BuildHistogram: 6.06852s, 18410 calls @ 6068518us
+
+[00:49:04] EvaluateSplits: 3.70195s, 22092 calls @ 3701955us
+
+[00:49:04] InitData: 0.50599s, 3682 calls @ 505990us
+
+[00:49:04] InitRoot: 6.54042s, 3682 calls @ 6540416us
+
+[00:49:04] LeafPartition: 2.93095s, 3682 calls @ 2930949us
+
+[00:49:04] UpdatePosition: 7.34616s, 22092 calls @ 7346161us
+
+[00:49:04] UpdateTree: 27.2345s, 3682 calls @ 27234470us
+
+[00:49:04] ======== Monitor (0):  ========
+[00:49:04] BuildHist: 11.777s, 22092 calls @ 11776979us
+
+[00:49:04] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 1, "verbosity": 3, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4873003999236971, "fit_seconds": 69.81188519997522, "predict_seconds": 2.4119138999376446, "dev_mae": 3.145654634718835}
+
+===== all_threads_squared_error, repeat 2 =====
+[00:49:13] ======== Monitor (0): HostSketchContainer ========
+[00:49:13] AllReduce: 0.001228s, 1 calls @ 1228us
+
+[00:49:13] MakeCuts: 0.00136s, 1 calls @ 1360us
+
+[00:49:13] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:49:13] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:49:42] ======== Monitor (0): GBTree ========
+[00:49:42] BoostNewTrees: 20.6743s, 3682 calls @ 20674251us
+
+[00:49:42] CommitModel: 0.003304s, 3682 calls @ 3304us
+
+[00:49:42] ======== Monitor (0): HistUpdater ========
+[00:49:42] BuildHistogram: 2.35256s, 18410 calls @ 2352555us
+
+[00:49:42] EvaluateSplits: 2.02245s, 22092 calls @ 2022449us
+
+[00:49:42] InitData: 0.247693s, 3682 calls @ 247693us
+
+[00:49:42] InitRoot: 2.35418s, 3682 calls @ 2354182us
+
+[00:49:42] LeafPartition: 3.41675s, 3682 calls @ 3416754us
+
+[00:49:42] UpdatePosition: 2.61602s, 22092 calls @ 2616019us
+
+[00:49:42] UpdateTree: 13.348s, 3682 calls @ 13348023us
+
+[00:49:42] ======== Monitor (0):  ========
+[00:49:42] BuildHist: 3.66893s, 22092 calls @ 3668925us
+
+[00:49:42] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 8, "verbosity": 3, "objective": "reg:squarederror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4919198998250067, "fit_seconds": 29.039238799829036, "predict_seconds": 0.7406001999042928, "dev_mae": 3.2599510483262657}
+
+===== all_threads_no_timers, repeat 2 =====
+RESULT {"threads": 8, "verbosity": 0, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4984855998773128, "fit_seconds": 41.681571499910206, "predict_seconds": 0.7202689000405371, "dev_mae": 3.1466175977894912}
+
+===== all_threads, repeat 3 =====
+[00:50:39] ======== Monitor (0): HostSketchContainer ========
+[00:50:39] AllReduce: 0.001296s, 1 calls @ 1296us
+
+[00:50:39] MakeCuts: 0.001432s, 1 calls @ 1432us
+
+[00:50:39] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:50:39] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:51:21] ======== Monitor (0): GBTree ========
+[00:51:21] BoostNewTrees: 21.2218s, 3682 calls @ 21221843us
+
+[00:51:21] CommitModel: 0.003902s, 3682 calls @ 3902us
+
+[00:51:21] ======== Monitor (0): HistUpdater ========
+[00:51:21] BuildHistogram: 3.02511s, 18410 calls @ 3025115us
+
+[00:51:21] EvaluateSplits: 2.11265s, 22092 calls @ 2112645us
+
+[00:51:21] InitData: 0.243287s, 3682 calls @ 243287us
+
+[00:51:21] InitRoot: 2.32185s, 3682 calls @ 2321849us
+
+[00:51:21] LeafPartition: 3.10514s, 3682 calls @ 3105144us
+
+[00:51:21] UpdatePosition: 3.04669s, 22092 calls @ 3046693us
+
+[00:51:21] UpdateTree: 14.1693s, 3682 calls @ 14169348us
+
+[00:51:21] ======== Monitor (0):  ========
+[00:51:21] BuildHist: 4.20976s, 22092 calls @ 4209755us
+
+[00:51:21] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 8, "verbosity": 3, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.5181468001101166, "fit_seconds": 42.47207450005226, "predict_seconds": 0.7423365998547524, "dev_mae": 3.1466175977894912}
+
+===== one_thread, repeat 3 =====
+[00:51:29] ======== Monitor (0): HostSketchContainer ========
+[00:51:29] AllReduce: 0.003177s, 1 calls @ 3177us
+
+[00:51:29] MakeCuts: 0.003276s, 1 calls @ 3276us
+
+[00:51:29] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:51:29] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:52:39] ======== Monitor (0): GBTree ========
+[00:52:39] BoostNewTrees: 51.9365s, 3682 calls @ 51936492us
+
+[00:52:39] CommitModel: 0.002913s, 3682 calls @ 2913us
+
+[00:52:39] ======== Monitor (0): HistUpdater ========
+[00:52:39] BuildHistogram: 6.14107s, 18410 calls @ 6141071us
+
+[00:52:39] EvaluateSplits: 3.69847s, 22092 calls @ 3698471us
+
+[00:52:39] InitData: 0.499699s, 3682 calls @ 499699us
+
+[00:52:39] InitRoot: 6.36321s, 3682 calls @ 6363214us
+
+[00:52:39] LeafPartition: 2.93852s, 3682 calls @ 2938521us
+
+[00:52:39] UpdatePosition: 7.28557s, 22092 calls @ 7285565us
+
+[00:52:39] UpdateTree: 27.0591s, 3682 calls @ 27059105us
+
+[00:52:39] ======== Monitor (0):  ========
+[00:52:39] BuildHist: 11.6463s, 22092 calls @ 11646252us
+
+[00:52:39] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 1, "verbosity": 3, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.5302685999777168, "fit_seconds": 69.6018519999925, "predict_seconds": 2.2267778001260012, "dev_mae": 3.145654634718835}
+
+===== all_threads_squared_error, repeat 3 =====
+[00:52:48] ======== Monitor (0): HostSketchContainer ========
+[00:52:48] AllReduce: 0.001158s, 1 calls @ 1158us
+
+[00:52:48] MakeCuts: 0.001279s, 1 calls @ 1279us
+
+[00:52:48] INFO: C:\actions-runner\_work\xgboost\xgboost\src\data\iterative_dmatrix.cc:56: Finished constructing the `IterativeDMatrix`: (123364, 10, 1233640).
+[00:52:48] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+[00:53:16] ======== Monitor (0): GBTree ========
+[00:53:16] BoostNewTrees: 20.3558s, 3682 calls @ 20355795us
+
+[00:53:16] CommitModel: 0.003534s, 3682 calls @ 3534us
+
+[00:53:16] ======== Monitor (0): HistUpdater ========
+[00:53:16] BuildHistogram: 2.3084s, 18410 calls @ 2308401us
+
+[00:53:16] EvaluateSplits: 1.99161s, 22092 calls @ 1991615us
+
+[00:53:16] InitData: 0.239756s, 3682 calls @ 239756us
+
+[00:53:16] InitRoot: 2.32881s, 3682 calls @ 2328812us
+
+[00:53:16] LeafPartition: 3.40477s, 3682 calls @ 3404766us
+
+[00:53:16] UpdatePosition: 2.53047s, 22092 calls @ 2530472us
+
+[00:53:16] UpdateTree: 13.1771s, 3682 calls @ 13177075us
+
+[00:53:16] ======== Monitor (0):  ========
+[00:53:16] BuildHist: 3.57435s, 22092 calls @ 3574347us
+
+[00:53:16] DEBUG: C:\actions-runner\_work\xgboost\xgboost\src\gbm\gbtree.cc:127: Using tree method: 0
+RESULT {"threads": 8, "verbosity": 3, "objective": "reg:squarederror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4426615000702441, "fit_seconds": 28.753544399980456, "predict_seconds": 0.7138435000088066, "dev_mae": 3.2599510483262657}
+
+===== all_threads_no_timers, repeat 3 =====
+RESULT {"threads": 8, "verbosity": 0, "objective": "reg:absoluteerror", "rounds": 3682, "train_rows": 123364, "load_seconds": 0.4699426000006497, "fit_seconds": 42.93940480006859, "predict_seconds": 0.7207057001069188, "dev_mae": 3.1466175977894912}

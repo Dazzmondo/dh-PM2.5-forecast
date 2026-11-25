@@ -1,58 +1,62 @@
-# Profiling report: training the GRU (Milestone 3, bonus)
+# Profiling report: training the selected XGBoost model (Milestone 3, bonus)
 
-**Project:** Six-Hour Urban PM2.5 Forecasting Across Ireland and Europe (https://github.com/Dazzmondo/dh-PM2.5-forecast). **Script:** `src/profile_gru.py`; results in `reports/m3/profiling/`; MLflow experiment `m3_profile`.
+**Project:** Six-Hour Urban PM2.5 Forecasting Across Ireland and Europe (https://github.com/Dazzmondo/dh-PM2.5-forecast). **Script:** `src/profile_xgboost.py`; results in `reports/m3/profiling/xgboost_cpu/`.
 
 ## 1. Workload and method
 
-One training step of the tuned GRU (32 units, 2 layers, batch size 256; `docs/M3.md` section 3.7) on the 123,364 training rows. `torch.profiler` recorded 40 steps after 5 warm-up steps, with each phase labelled by `record_function`. Sweeps then timed three changes: batch size, torch threads and the Adam implementation. Machines: a laptop (Intel i7-8565U), a Google Cloud CPU VM (`n1-standard-8`) and a GPU VM (the same type with one NVIDIA T4).
+One fit of the frozen model's settings (`models/xgboost/v3`: 3,682 boosting rounds, depth 6, absolute-error objective) on the 123,364 training rows with 10 inputs. XGBoost trains inside its compiled library, so the profile uses the library's own timers (`verbosity=3`), which report its internal operations. Each setting was run three times on a laptop (Intel i7-8565U, 4 cores, 8 threads) that was otherwise nearly idle; the table shows the run with the median total. The profiled fit reproduces the model's 2024 error (MAE 3.1466 at 8 threads).
 
 ## 2. Expensive operations
 
-| Share of a training step (profiled CPU time) | Laptop | CPU VM | GPU VM |
-|---|---|---|---|
-| Backward pass | 49% | 50% | 55% |
-| Forward pass | 39% | 39% | 21% |
-| Optimiser step | 10% | 9% | 16% |
-| Choosing the batch and computing the loss | 2% | 2% | 8% |
+| Part of one fit | 1 thread | 8 threads | Speed-up | Share at 8 threads |
+|---|---|---|---|---|
+| Outside the tree-building step (no timer) | 17.7 s | 21.4 s | 0.83 | 51% |
+| Tree-building step, outside the tree updater (no timer) | 24.9 s | 6.9 s | 3.60 | 16% |
+| Building histograms (`InitRoot`, `BuildHistogram`) | 12.5 s | 5.3 s | 2.36 | 13% |
+| Moving rows to child nodes (`UpdatePosition`) | 7.3 s | 3.0 s | 2.44 | 7% |
+| Assigning rows to leaves (`LeafPartition`) | 2.9 s | 3.1 s | 0.96 | 7% |
+| Choosing splits (`EvaluateSplits`) | 3.7 s | 2.1 s | 1.77 | 5% |
+| Set-up and the rest of the updater | 0.6 s | 0.6 s | 1.06 | 1% |
+| **Whole fit** | **69.6 s** | **42.3 s** | **1.65** | **100%** |
 
-- **CPU VM:** no single operator dominates. The largest by self time are `aten::cat` (10.5%), `aten::mm` (7.0%), `aten::bernoulli_` (6.8%, the dropout masks), `aten::add_` (5.4%) and `aten::addmm` (4.9%).
-- **GPU:** of the 38 ms of kernel time in 40 steps, the cuDNN GRU backward pass takes 47%, the forward pass 27% and the Adam update 5%.
+<img src="../reports/m3/profiling/xgboost_cpu/profile.png" alt="Time per part of one XGBoost fit at 1 and 8 threads" width="100%">
 
-![Profile of the tuned GRU on the CPU VM](../reports/m3/profiling/cpu_vm/profile.png)
-
-*Figure 1.* CPU VM: operators, phases and the three sweeps.
+*Figure 1.* The same breakdown. The two parts without a timer are differences between the total and XGBoost's `BoostNewTrees` and `UpdateTree` timers.
 
 ## 3. Bottlenecks
 
-**CPU: the cost of starting many small operations.** The matrices are small and the operators are called thousands of times. From batch 256 to 4,096, 16 times more rows cost only 4.6 times the time per step.
+- **Work outside tree building does not speed up.** It is the largest part at 8 threads and was slower than with 1 thread in every repeat, which limits the speed-up of the whole fit.
+- **The absolute-error objective is a large part of it.** The same settings with squared error took 28.8 s instead of 42.3 s, with 8.4 s outside tree building instead of 21.4 s. *Plausible explanation, not timed directly:* for absolute error XGBoost recalculates the leaf values from the residuals after each tree.
+- **Among the timed operations, histograms and row movement cost most**; 8 threads make both more than twice as fast. Assigning rows to leaves does not speed up.
+- **Rounds multiply the cost of every round's work.** The tuned model needs 3,682 rounds against 500 for the starting values.
+- **Not bottlenecks:** loading the data (about 0.5 s) and prediction (0.7 s for the 31,192 development rows, 3.1 times faster than with 1 thread).
 
-<img src="images/profile_cpu_vm_timeline_steps.png" alt="Four training steps of the CPU VM profile in Perfetto" width="65%">
+<img src="images/profile_xgboost_timers.png" alt="XGBoost timer output in the terminal" width="80%">
 
-*Figure 2.* CPU VM timeline (Perfetto): four training steps, each a dense stack of short operators.
+*Figure 2.* XGBoost's timer output for the first repeat at 8 threads (two terminal captures of `timer_log.txt`, trimmed and joined). The table above uses the median repeat, so its times differ.
 
-**GPU: the device waits for work.** A step takes 3.1 ms (10.3 ms on the CPU VM), but the kernels use only about 0.95 ms of it. The step time barely changes from 256 to 1,024 rows, which points to the cost of issuing operations from the CPU and not to arithmetic.
+<img src="images/mlflow_xgboost_tuned_metrics_3.png" alt="MLflow metrics of the frozen XGBoost model" width="100%">
 
-<img src="images/profile_gpu_timeline_gpu_streams.png" alt="The GPU streams of the GPU profile in Perfetto" width="65%">
-
-*Figure 3.* GPU VM timeline (Perfetto): short bursts of work on the GPU streams, separated by idle gaps.
-
-**Not a bottleneck: the data supply.** Building the input tensors for all training rows takes under 0.02 s, also with the move to the GPU.
+*Figure 3.* MLflow record of the frozen model: 339 s for its four fits (three selection folds and 2024) and 22.87 ms to predict 1,000 rows.
 
 ## 4. Mitigations
 
-| Change tested | Laptop | CPU VM | GPU (T4) |
-|---|---|---|---|
-| Batch 64 / 256 / 1,024 / 4,096: seconds per epoch | 16.2 / 6.0 / 3.7 / 3.2 | 13.0 / 5.0 / 2.8 / 1.5 | 6.1 / 1.5 / 0.38 / 0.18 |
-| Torch threads 1 / 2 / 4 / 8: ms per step | 12.1 / 12.2 / 12.6 / 17.0 | 9.8 / 10.8 / 10.7 / 13.5 | not applicable |
-| Adam default / foreach / fused: ms per step | 15.0 / 15.2 / 12.6 | 10.6 / 10.5 / 10.0 | 3.11 / 3.09 / 2.84 |
+| Change tested | Time | Effect on 2024 error |
+|---|---|---|
+| CPU VM, 1 / 4 / 8 threads: tuned fit | 45.7 / 22.5 / 22.4 s | on the laptop, 1 and 8 threads differ by less than 0.001 |
+| NVIDIA T4 instead of the same machine's CPU | 16.3 s to 7.06 s | 3.1452 on CPU, 3.1446 on GPU |
+| 500 rounds (starting values) instead of 3,682 | four fits 20.6 s instead of 339 s; prediction 3.1 instead of 22.9 ms per 1,000 rows | 3.152 instead of 3.147 |
+| Squared error instead of absolute error | 42.3 s to 28.8 s | 3.260 instead of 3.147: rejected |
 
-Suggestions for future training (the frozen models were not retrained):
+Suggestions (the frozen model was not changed):
 
-- **Fused Adam:** 16%, 6% and 9% faster than the default on the three machines.
-- **One torch thread** on a CPU: more threads add nothing for this model.
-- **Larger batch:** the main lever, but the batch size **stays at 256**. XGBoost is the stronger model (2024 MAE 3.147 against 3.187), so a small GRU saving does not change the project's conclusions. The saving is also not clear-cut: batch 512 only matched 256 in the search, 1,024 was about 0.5% worse (three trials), more epochs might be needed, and the learning rate was tuned for 256.
-- **Not tested:** a compiled model (`torch.compile`, the first thing to try against the per-operation cost), fewer layers and mixed precision.
+- Train on **4 threads** on a 4-core machine; 8 add nothing on the VM.
+- If speed mattered more than the last 0.005 µg/m³, the **500-round model** is the largest saving.
+- A **GPU** more than halves the fit time, but saves only about 9 seconds per fit.
+- **Keep the absolute-error objective:** it costs time and gives a clearly lower error.
+- **The largest part (outside tree building):** no tested change targets it without raising the error. A GPU or fewer rounds shortens the whole fit, and a lower-level profiler would be the next step to see which functions it contains.
+- **Not tested:** fewer histogram bins (`max_bin`), aimed at the histogram cost.
 
 ## 5. Limits
 
-One configuration, 40 steps; phase shares include profiler overhead. The CPU and GPU VMs were separate machines (like-for-like comparison: `docs/M3.md` section 6.3). The GPU run used a corrected `src/profile_gru.py` (now in the repository) because the phase table failed on a GPU at its commit, `ba2a82f`. The GPU `share_of_self_time` column and operator chart count time twice, so the GPU shares above come from the `aten::` rows of `operators.csv`.
+About two thirds of the 8-thread fit falls outside the detailed timers. Times come from one laptop: totals ranged from 37.7 to 42.9 s at 8 threads (with and without timers) and from 66.2 to 69.8 s at 1, and the cost of the timers could not be told apart from this variation. The commit recorded for the runs, `2471e97`, precedes the commit that added the script. Thread and GPU timings in section 4 come from the benchmark in `docs/M3.md` section 6.3, where the GRU's training step was also profiled.
